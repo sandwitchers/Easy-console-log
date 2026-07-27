@@ -1,5 +1,5 @@
 /* ============================================================
-   Easy Console Log — Premium Minimalist Dark UI (v4)
+   Easy Console Log — Premium Minimalist Dark UI (v6)
    ============================================================
    Strategy:
    - ID-based selectors for critical layout/visibility properties
@@ -461,6 +461,9 @@
     /* Ensure log entries stay inside, never overflow into controls area */
     position: relative !important;
     z-index: 1 !important;
+    /* v6: Mobile-friendly scroll containment (TauriTavern pattern) */
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch !important;
 }
 
 #easy-console-log-monitor-overlay .ecl-log-container::-webkit-scrollbar {
@@ -580,6 +583,9 @@
     font-weight: 400 !important;
     line-height: 1.4 !important;
     word-break: break-word !important;
+    /* v6: Preserve line breaks from multi-line messages & stack traces */
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere !important;
 }
 
 #easy-console-log-monitor-overlay .ecl-log-message code,
@@ -598,6 +604,62 @@
 
 #easy-console-log-monitor-overlay .ecl-log-entry.ecl-level-error .ecl-log-message {
     color: #fecaca !important;
+}
+
+
+/* ── v6: Target Field (origin context like "console.warn", "SSE.open") ── */
+#easy-console-log-monitor-overlay .ecl-log-target {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
+    font-style: italic !important;
+    font-size: 10px !important;
+    color: #888 !important;
+    opacity: 0.8 !important;
+}
+
+/* Frontend target — blue accent */
+#easy-console-log-monitor-overlay .ecl-log-entry.ecl-source-frontend .ecl-log-target {
+    color: rgba(74, 158, 255, 0.7) !important;
+}
+
+/* Backend target — purple accent */
+#easy-console-log-monitor-overlay .ecl-log-entry.ecl-source-backend .ecl-log-target {
+    color: rgba(167, 139, 250, 0.7) !important;
+}
+
+
+/* ── v6: Stack Trace (collapsible, click to expand) ── */
+#easy-console-log-monitor-overlay .ecl-log-stack {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
+    font-size: 11px !important;
+    color: #888 !important;
+    line-height: 1.4 !important;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere !important;
+    margin-top: 4px !important;
+    padding: 4px 6px !important;
+    background: rgba(255, 255, 255, 0.02) !important;
+    border-radius: 3px !important;
+    /* Default: collapsed (show only first line) */
+    max-height: 1.6em !important;
+    overflow: hidden !important;
+    cursor: pointer !important;
+    transition: max-height 0.2s ease, background 0.2s ease !important;
+}
+
+/* Expanded: show full stack trace */
+#easy-console-log-monitor-overlay .ecl-log-stack.ecl-stack-expanded {
+    max-height: 500px !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Warning stack traces — amber tint */
+#easy-console-log-monitor-overlay .ecl-log-entry.ecl-level-warn .ecl-log-stack {
+    color: rgba(251, 191, 36, 0.6) !important;
+}
+
+/* Error stack traces — red tint */
+#easy-console-log-monitor-overlay .ecl-log-entry.ecl-level-error .ecl-log-stack {
+    color: rgba(239, 68, 68, 0.6) !important;
 }
 
 

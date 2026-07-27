@@ -1,18 +1,22 @@
 // ============================================================
-// Easy Console Log — SillyTavern Extension (v5)
+// Easy Console Log — SillyTavern Extension (v6)
 // ============================================================
-// NEW IN v5:
-// - BACKEND LOG CAPTURE: eventSource (SSE) monitoring,
-//   global JS errors, network status changes — tagged "backend"
-// - PERFORMANCE OVERHAUL: batched debounced rendering,
-//   incremental prepend for new logs, max DOM entries limit
-//   prevents freeze when rapid logs arrive or monitor is opened
+// NEW IN v6 (inspired by TauriTavern-Creator-Extension research):
+// - NUMERIC ID + epoch timestampMs per log entry (stable keys)
+// - DEDUPLICATED toast notifications (repeatCount pattern)
+// - MULTI-FIELD SEARCH: message + level + source
+// - STACK TRACE CAPTURE: Error objects get stack field
+// - PROPER LIFECYCLE: cleanup on unload (remove listeners, restore console)
+// - BETTER ARGS SERIALIZATION: Error objects, circular refs, depth limit
+// - HIGHER CAPACITY: 500 max entries, 200 rendered DOM nodes
+// - TARGET FIELD: origin context (e.g., "console.warn", "SSE.open")
+// - MORE SSE EVENTS: added streaming, persona, world info events
 //
-// CRITICAL SAFETY MEASURES:
+// CRITICAL SAFETY MEASURES (carried from v5):
 // 1. Only import what we ACTUALLY USE — unused imports crash ST
 // 2. Console interception DELAYED until ST finishes loading
 // 3. Every operation wrapped in try/catch to prevent ST hangs
-// 4. Anti-recursion guard on addLog
+// 4. Anti-recursion guard on addLog (isInsideAddLog flag)
 // 5. Overlay visibility uses CLASS TOGGLE (.ecl-hidden)
 // 6. Toggle buttons defensively re-ensured visible after render
 // 7. Backend capture is SAFE — only monitors, never intercepts
@@ -26,8 +30,10 @@ const extensionName = "Easy-console-log";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 
 // ── Constants ──
-const MAX_RENDERED_ENTRIES = 100; // Only render last 100 entries in DOM
-const RENDER_DEBOUNCE_MS = 200;   // Batch rapid log arrivals into 1 render
+const MAX_RENDERED_ENTRIES = 200;    // Max DOM nodes rendered (was 100)
+const RENDER_DEBOUNCE_MS = 200;      // Batch rapid log arrivals into 1 render
+const TOAST_DEDUP_WINDOW_MS = 3000;  // Dedup toast within 3s window
+const MAX_OBJECT_DEPTH = 3;          // JSON serialization depth limit
 
 // ── State ──
 const defaultSettings = {
@@ -35,12 +41,13 @@ const defaultSettings = {
     captureBrowserConsole: true,
     captureBackendEvents: true,
     showNotifications: true,
-    maxEntries: 200,
+    maxEntries: 500,          // Was 200 — now matches TauriTavern's cap
     activeSource: "frontend",
     activeFilter: "ALL",
 };
 
 let logs = [];
+let logIdCounter = 0;            // Unique numeric ID per entry (TauriTavern pattern)
 let originalConsole = {};
 let isConsoleIntercepted = false;
 let isBackendIntercepted = false;
@@ -49,7 +56,9 @@ let toastTimeout = null;
 let isInsideAddLog = false;
 let renderDebounceTimer = null;
 let pendingRenderType = "none"; // "full" | "incremental"
-let lastRenderedLogIndex = -1;  // Track which logs have been rendered
+let lastRenderedLogIndex = -1;
+let toastDedupMap = new Map();   // key → { count, lastShownMs } for dedup
+let backendCleanupFns = [];      // Functions to call on unload for cleanup
 
 // ── Initialize ──
 jQuery(async () => {
@@ -68,6 +77,9 @@ jQuery(async () => {
             if (settings.captureBrowserConsole) interceptConsole();
             if (settings.captureBackendEvents) interceptBackend();
         });
+
+        // Register cleanup on page unload
+        window.addEventListener("beforeunload", cleanupOnUnload);
 
     } catch (error) {
         if (originalConsole.error) {
@@ -106,6 +118,32 @@ function waitForSillyTavernReady() {
             doResolve();
         }, 8000);
     });
+}
+
+// ── Lifecycle Cleanup ──
+// Properly remove event listeners and restore console on unload.
+// Prevents memory leaks from orphaned subscriptions (TauriTavern pattern).
+function cleanupOnUnload() {
+    try {
+        // Restore original console methods
+        restoreConsole();
+
+        // Remove backend event listeners
+        backendCleanupFns.forEach(fn => {
+            try { fn(); } catch (e) { /* already gone */ }
+        });
+        backendCleanupFns = [];
+        isBackendIntercepted = false;
+
+        // Clear timers
+        if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
+        if (toastTimeout) clearTimeout(toastTimeout);
+
+        // Clear state
+        logs = [];
+        logIdCounter = 0;
+        toastDedupMap.clear();
+    } catch (e) { /* non-critical on unload */ }
 }
 
 // ── Settings ──
@@ -199,7 +237,6 @@ function openMonitor() {
         overlay.style.removeProperty("display");
     }
     ensureToggleVisible();
-    // Full render on open — reset rendered index
     lastRenderedLogIndex = -1;
     scheduleFullRender();
 }
@@ -243,7 +280,7 @@ function ensureToggleVisible() {
 }
 
 // ============================================================
-// FRONTEND: Console Interception
+// FRONTEND: Console Interception (with stack trace capture)
 // ============================================================
 function interceptConsole() {
     if (isConsoleIntercepted) return;
@@ -257,27 +294,41 @@ function interceptConsole() {
         const settings = extension_settings[extensionName];
 
         console.log = function (...args) {
-            try { originalConsole.log(...args); if (settings.captureBrowserConsole) safeAddLog("info", args, "frontend"); }
+            try { originalConsole.log(...args); if (settings.captureBrowserConsole) safeAddLog("info", args, "frontend", "console.log"); }
             catch (e) { originalConsole.error(`[${extensionName}] console.log interceptor error:`, e); }
         };
 
         console.info = function (...args) {
-            try { originalConsole.info(...args); if (settings.captureBrowserConsole) safeAddLog("info", args, "frontend"); }
+            try { originalConsole.info(...args); if (settings.captureBrowserConsole) safeAddLog("info", args, "frontend", "console.info"); }
             catch (e) { originalConsole.error(`[${extensionName}] console.info interceptor error:`, e); }
         };
 
         console.warn = function (...args) {
-            try { originalConsole.warn(...args); if (settings.captureBrowserConsole) { safeAddLog("warn", args, "frontend"); if (settings.showNotifications) showToast("warn", args); } }
+            try {
+                originalConsole.warn(...args);
+                if (settings.captureBrowserConsole) {
+                    const stack = extractStackFromArgs(args);
+                    safeAddLog("warn", args, "frontend", "console.warn", stack);
+                    if (settings.showNotifications) dedupedToast("warn", args);
+                }
+            }
             catch (e) { originalConsole.error(`[${extensionName}] console.warn interceptor error:`, e); }
         };
 
         console.error = function (...args) {
-            try { originalConsole.error(...args); if (settings.captureBrowserConsole) { safeAddLog("error", args, "frontend"); if (settings.showNotifications) showToast("error", args); } }
+            try {
+                originalConsole.error(...args);
+                if (settings.captureBrowserConsole) {
+                    const stack = extractStackFromArgs(args);
+                    safeAddLog("error", args, "frontend", "console.error", stack);
+                    if (settings.showNotifications) dedupedToast("error", args);
+                }
+            }
             catch (e) { originalConsole.error(`[${extensionName}] console.error interceptor error:`, e); }
         };
 
         console.debug = function (...args) {
-            try { originalConsole.debug(...args); if (settings.captureBrowserConsole) safeAddLog("debug", args, "frontend"); }
+            try { originalConsole.debug(...args); if (settings.captureBrowserConsole) safeAddLog("debug", args, "frontend", "console.debug"); }
             catch (e) { originalConsole.error(`[${extensionName}] console.debug interceptor error:`, e); }
         };
 
@@ -301,33 +352,52 @@ function restoreConsole() {
     }
 }
 
+// ── Extract stack trace from args that contain Error objects ──
+function extractStackFromArgs(args) {
+    for (const arg of args) {
+        if (arg instanceof Error && arg.stack) {
+            // Return first 3 lines of stack trace for concise display
+            const lines = arg.stack.split("\n").slice(0, 3);
+            return lines.join("\n");
+        }
+    }
+    return null;
+}
+
 // ============================================================
 // BACKEND: SSE + Global Errors + Network Events
 // ============================================================
 // Strategy: ONLY monitor/observe — NEVER intercept fetch or XHR
 // which would break ST's API calls. We passively capture:
 // 1. eventSource (SSE) connection state changes
-// 2. Key SSE events (app_ready, generation events, etc.)
-// 3. window.onerror — uncaught JS errors (often from failed API calls)
+// 2. Key SSE events (expanded list from v5)
+// 3. window.onerror — uncaught JS errors
 // 4. window.onunhandledrejection — unhandled Promise rejections
-// 5. navigator online/offline events — network connectivity changes
+// 5. navigator online/offline events
+// All tagged "backend" with target field for origin context.
 function interceptBackend() {
     if (isBackendIntercepted) return;
     try {
         // 1. SSE Connection Monitoring
         if (typeof eventSource !== "undefined" && eventSource.readyState !== undefined) {
-            // Monitor connection state changes
-            eventSource.addEventListener("open", () => {
-                safeAddLog("info", ["[SSE] Connection established to backend server"], "backend");
-            });
+            const onOpen = () => {
+                safeAddLog("info", ["[SSE] Connection established to backend server"], "backend", "SSE.open");
+            };
+            eventSource.addEventListener("open", onOpen);
 
-            eventSource.addEventListener("error", () => {
+            const onError = () => {
                 const state = eventSource.readyState;
                 const stateDesc = state === 0 ? "CONNECTING" : state === 1 ? "OPEN" : state === 2 ? "CLOSED" : "UNKNOWN";
-                safeAddLog("error", [`[SSE] Connection error — readyState: ${stateDesc} (${state})`], "backend");
+                safeAddLog("error", [`[SSE] Connection error — readyState: ${stateDesc} (${state})`], "backend", "SSE.error");
+            };
+            eventSource.addEventListener("error", onError);
+
+            backendCleanupFns.push(() => {
+                try { eventSource.removeEventListener("open", onOpen); } catch(e) {}
+                try { eventSource.removeEventListener("error", onError); } catch(e) {}
             });
 
-            // Monitor key backend events
+            // Expanded SSE events — more SillyTavern lifecycle coverage
             const backendEvents = [
                 "app_ready",
                 "message_generation_started",
@@ -337,50 +407,70 @@ function interceptBackend() {
                 "character_loaded",
                 "chat_loaded",
                 "group_loaded",
+                "streaming_started",
+                "streaming_finished",
+                "persona_loaded",
+                "world_info_loaded",
             ];
 
             backendEvents.forEach(eventName => {
-                eventSource.addEventListener(eventName, (e) => {
+                const handler = (e) => {
                     let detail = "";
                     try {
-                        if (e.data) detail = ` — data: ${e.data.substring(0, 100)}`;
+                        if (e.data) detail = ` — data: ${e.data.substring(0, 120)}`;
                     } catch (ex) { /* no data */ }
-                    safeAddLog("info", [`[SSE] Event: ${eventName}${detail}`], "backend");
+                    safeAddLog("info", [`[SSE] Event: ${eventName}${detail}`], "backend", `SSE.${eventName}`);
+                };
+                eventSource.addEventListener(eventName, handler);
+                backendCleanupFns.push(() => {
+                    try { eventSource.removeEventListener(eventName, handler); } catch(e) {}
                 });
             });
         }
 
         // 2. Global Uncaught Errors
-        window.addEventListener("error", (e) => {
+        const onErrorHandler = (e) => {
             const msg = e.message || "Unknown error";
             const src = e.filename || "unknown";
             const line = e.lineno || "?";
             const col = e.colno || "?";
-            safeAddLog("error", [`[Uncaught] ${msg} at ${src}:${line}:${col}`], "backend");
-        });
+            const stack = e.error?.stack?.split("\n").slice(0, 3).join("\n") || null;
+            safeAddLog("error", [`[Uncaught] ${msg} at ${src}:${line}:${col}`], "backend", "window.onerror", stack);
+        };
+        window.addEventListener("error", onErrorHandler);
+        backendCleanupFns.push(() => window.removeEventListener("error", onErrorHandler));
 
         // 3. Unhandled Promise Rejections
-        window.addEventListener("unhandledrejection", (e) => {
+        const onRejectionHandler = (e) => {
             const reason = e.reason;
             let msg = "Unhandled Promise rejection";
+            let stack = null;
             if (reason instanceof Error) {
-                msg = `${reason.message} at ${reason.stack?.split("\n")[0] || "unknown"}`;
+                msg = `${reason.message}`;
+                if (reason.stack) stack = reason.stack.split("\n").slice(0, 3).join("\n");
             } else if (typeof reason === "string") {
                 msg = reason;
             } else {
-                try { msg = JSON.stringify(reason).substring(0, 100); }
-                catch (ex) { msg = String(reason).substring(0, 100); }
+                try { msg = safeStringify(reason).substring(0, 150); }
+                catch (ex) { msg = String(reason).substring(0, 150); }
             }
-            safeAddLog("error", [`[Promise] ${msg}`], "backend");
-        });
+            safeAddLog("error", [`[Promise] ${msg}`], "backend", "unhandledrejection", stack);
+        };
+        window.addEventListener("unhandledrejection", onRejectionHandler);
+        backendCleanupFns.push(() => window.removeEventListener("unhandledrejection", onRejectionHandler));
 
         // 4. Network Connectivity Changes
-        window.addEventListener("offline", () => {
-            safeAddLog("warn", ["[Network] Device went OFFLINE — backend unreachable"], "backend");
-        });
-
-        window.addEventListener("online", () => {
-            safeAddLog("info", ["[Network] Device back ONLINE — reconnecting to backend"], "backend");
+        const onOffline = () => {
+            safeAddLog("warn", ["[Network] Device went OFFLINE — backend unreachable"], "backend", "network.offline");
+        };
+        const onOnline = () => {
+            safeAddLog("info", ["[Network] Device back ONLINE — reconnecting to backend"], "backend", "network.online");
+        };
+        window.addEventListener("offline", onOffline);
+        window.addEventListener("online", onOnline);
+        backendCleanupFns.push(() => {
+            window.removeEventListener("offline", onOffline);
+            window.removeEventListener("online", onOnline);
         });
 
         // Log initial state
@@ -389,7 +479,7 @@ function interceptBackend() {
             "NOT_AVAILABLE";
         const isOnline = navigator.onLine ? "ONLINE" : "OFFLINE";
 
-        safeAddLog("info", [`[Backend Monitor] Started — SSE: ${esState}, Network: ${isOnline}`], "backend");
+        safeAddLog("info", [`[Backend Monitor] Started — SSE: ${esState}, Network: ${isOnline}`], "backend", "init");
 
         isBackendIntercepted = true;
     } catch (e) {
@@ -400,49 +490,61 @@ function interceptBackend() {
 // ============================================================
 // LOG ADD + ANTI-RECURSION
 // ============================================================
-function safeAddLog(level, args, source) {
+function safeAddLog(level, args, source, target, stack) {
     if (isInsideAddLog) return;
     isInsideAddLog = true;
-    try { addLog(level, args, source); }
+    try { addLog(level, args, source, target, stack); }
     catch (e) { originalConsole.error?.(`[${extensionName}] addLog error:`, e); }
     finally { isInsideAddLog = false; }
 }
 
-function addLog(level, args, source) {
+function addLog(level, args, source, target, stack) {
     const maxEntries = extension_settings[extensionName]?.maxEntries || defaultSettings.maxEntries;
-    const now = new Date();
-    const timestamp = now.toLocaleTimeString("en-GB", {
+    const now = Date.now(); // epoch ms (TauriTavern pattern)
+    const timestamp = new Date(now).toLocaleTimeString("en-GB", {
         hour: "2-digit", minute: "2-digit", second: "2-digit",
     });
 
     const message = formatArgs(args);
-    const logEntry = { level, message, source: source || "frontend", timestamp };
+    const logEntry = {
+        id: logIdCounter++,           // Unique numeric ID (TauriTavern pattern)
+        timestampMs: now,             // Epoch ms for stable comparison
+        level,
+        message,
+        source: source || "frontend",
+        target: target || null,       // Origin context (e.g., "console.warn", "SSE.open")
+        stack: stack || null,         // Stack trace (for Error objects)
+        timestamp,                    // Formatted string for display
+    };
 
     logs.push(logEntry);
 
+    // Eviction: keep only last maxEntries (TauriTavern uses pop, we use slice)
     if (logs.length > maxEntries) {
         logs = logs.slice(-maxEntries);
-        // Reset rendered index since array was trimmed
-        lastRenderedLogIndex = -1;
+        lastRenderedLogIndex = -1; // Reset since array was trimmed
     }
 
     updateStats();
 
     if (isMonitorOpen) {
-        // PERFORMANCE: Instead of immediate render, schedule batched render.
-        // If new logs arrive rapidly, they're batched into one update.
         scheduleIncrementalRender();
     }
 }
 
+// ── Better Args Serialization ──
+// Handles Error objects, circular references, depth limits, multi-arg formatting
 function formatArgs(args) {
     return args.map(arg => {
         if (arg === null) return "null";
         if (arg === undefined) return "undefined";
+        if (arg instanceof Error) {
+            // Error objects: show name + message (stack is captured separately)
+            return `${arg.name}: ${arg.message}`;
+        }
         if (typeof arg === "object") {
             try {
-                const str = JSON.stringify(arg);
-                // Truncate very long objects to prevent DOM bloat
+                const str = safeStringify(arg, MAX_OBJECT_DEPTH);
                 return str.length > 500 ? str.substring(0, 500) + "... [truncated]" : str;
             } catch (e) { return String(arg).substring(0, 200); }
         }
@@ -451,19 +553,38 @@ function formatArgs(args) {
     }).join(" ");
 }
 
+// ── Safe JSON stringify with depth limit and circular ref detection ──
+function safeStringify(obj, maxDepth, seenSet) {
+    if (maxDepth === undefined) maxDepth = MAX_OBJECT_DEPTH;
+    if (seenSet === undefined) seenSet = new Set();
+
+    if (obj === null) return "null";
+    if (obj === undefined) return "undefined";
+    if (typeof obj !== "object") return JSON.stringify(obj);
+
+    // Circular reference detection
+    if (seenSet.has(obj)) return "[Circular]";
+    seenSet.add(obj);
+
+    if (maxDepth <= 0) return "[Object]";
+
+    if (Array.isArray(obj)) {
+        const items = obj.slice(0, 10).map(item => safeStringify(item, maxDepth - 1, seenSet));
+        return `[${items.join(",")}${obj.length > 10 ? `, ...(${obj.length} items)` : ""}]`;
+    }
+
+    const keys = Object.keys(obj).slice(0, 15);
+    const pairs = keys.map(key => {
+        const val = safeStringify(obj[key], maxDepth - 1, seenSet);
+        return `"${key}":${val}`;
+    });
+    const suffix = Object.keys(obj).length > 15 ? `, ...(${Object.keys(obj).length} keys)` : "";
+    return `{${pairs.join(",")}${suffix}}`;
+}
+
 // ============================================================
 // PERFORMANCE: Batched + Incremental Rendering
 // ============================================================
-// Instead of rebuilding ALL DOM entries every time a log arrives,
-// we use two render strategies:
-// 1. INCREMENTAL: When a new log arrives while monitor is open,
-//    prepend only the new entry at the top. Much cheaper than
-//    rebuilding all entries.
-// 2. FULL: When filter/source/search changes, rebuild everything.
-//    Also used on first open and after clear.
-//
-// Both are debounced — rapid log bursts are batched into 1 render.
-
 function scheduleIncrementalRender() {
     pendingRenderType = "incremental";
     clearTimeout(renderDebounceTimer);
@@ -511,11 +632,11 @@ function doIncrementalRender() {
 
         if (newLogs.length === 0) return;
 
-        // Filter new logs matching current view
+        // Filter new logs matching current view (multi-field search)
         const matchingNewLogs = newLogs.filter(log => {
             if (log.source !== activeSource) return false;
             if (activeFilter !== "ALL" && log.level !== activeFilter.toLowerCase()) return false;
-            if (searchTerm && !log.message.toLowerCase().includes(searchTerm)) return false;
+            if (searchTerm && !matchSearch(log, searchTerm)) return false;
             return true;
         });
 
@@ -524,16 +645,13 @@ function doIncrementalRender() {
         if (emptyEl) emptyEl.remove();
 
         // Prepend matching new logs at the top (newest first)
-        // We iterate in reverse order so the latest log ends up at top
         for (let i = matchingNewLogs.length - 1; i >= 0; i--) {
             const log = matchingNewLogs[i];
             const entryEl = createLogEntryElement(log);
             container.prepend(entryEl);
         }
 
-        // Trim DOM entries that exceed max rendered limit
         trimDomEntries(container);
-
         ensureToggleVisible();
     } catch (e) {
         originalConsole.error?.(`[${extensionName}] incremental render error:`, e);
@@ -550,9 +668,10 @@ function doFullRender() {
         const filteredLogs = getFilteredLogs();
 
         if (filteredLogs.length === 0) {
+            // Differentiate empty states (TauriTavern pattern)
             const emptyMsg = logs.length === 0
                 ? "No logs captured yet. Logs will appear here in real-time."
-                : "No logs match your current filter.";
+                : "No logs match your current filter or search.";
             container.innerHTML = `
                 <div class="ecl-log-empty">
                     <span class="fa-solid fa-terminal"></span>
@@ -585,33 +704,45 @@ function doFullRender() {
 }
 
 // ── Create Single Log Entry Element ──
-// Reusable for both incremental and full render.
+// Enhanced with target field display and stack trace (v6)
 function createLogEntryElement(log) {
     const entry = document.createElement("div");
     entry.className = `ecl-log-entry ecl-level-${log.level} ecl-source-${log.source}`;
+    entry.dataset.logId = log.id; // Stable numeric ID for DOM keying
 
     const levelClass = `ecl-badge-${log.level}`;
     const safeMessage = escapeHtml(log.message)
         .replace(/`([^`]+)`/g, '<code class="ecl-inline-code">$1</code>');
 
+    // Build meta row with optional target display
+    const targetHtml = log.target
+        ? `<span class="ecl-log-target">${escapeHtml(log.target)}</span>`
+        : `<span class="ecl-log-source">${log.source}</span>`;
+
+    // Stack trace section (collapsible for errors/warnings)
+    let stackHtml = "";
+    if (log.stack) {
+        const safeStack = escapeHtml(log.stack);
+        stackHtml = `<div class="ecl-log-stack" onclick="this.classList.toggle('ecl-stack-expanded')">${safeStack}</div>`;
+    }
+
     entry.innerHTML = `
         <div class="ecl-log-entry-meta">
             <span class="ecl-log-timestamp">${log.timestamp}</span>
             <span class="ecl-log-level-badge ${levelClass}">${log.level.toUpperCase()}</span>
-            <span class="ecl-log-source">${log.source}</span>
+            ${targetHtml}
         </div>
         <div class="ecl-log-message">${safeMessage}</div>
+        ${stackHtml}
     `;
 
     return entry;
 }
 
 // ── Trim DOM entries to max limit ──
-// Removes oldest entries (at bottom of container) when count exceeds limit
 function trimDomEntries(container) {
     const entries = container.querySelectorAll(".ecl-log-entry");
     if (entries.length > MAX_RENDERED_ENTRIES) {
-        // Remove from bottom (oldest entries)
         const excess = entries.length - MAX_RENDERED_ENTRIES;
         for (let i = entries.length - 1; i >= entries.length - excess; i--) {
             entries[i].remove();
@@ -621,7 +752,9 @@ function trimDomEntries(container) {
 
 function clearLogs() {
     logs = [];
+    logIdCounter = 0;
     lastRenderedLogIndex = -1;
+    toastDedupMap.clear();
     ensureToggleVisible();
     scheduleFullRender();
     updateStats();
@@ -630,9 +763,12 @@ function clearLogs() {
 function copyVisibleLogs() {
     try {
         const visibleEntries = getFilteredLogs();
-        const text = visibleEntries.map(log =>
-            `[${log.timestamp}] [${log.level.toUpperCase()}] [${log.source}] ${log.message}`
-        ).join("\n");
+        // TauriTavern-style formatted output: [HH:MM:SS] [LEVEL] [target] message
+        const text = visibleEntries.map(log => {
+            const target = log.target ? `[${log.target}]` : `[${log.source}]`;
+            const stackSuffix = log.stack ? `\n  Stack: ${log.stack}` : "";
+            return `[${log.timestamp}] [${log.level.toUpperCase()}] ${target} ${log.message}${stackSuffix}`;
+        }).join("\n");
 
         if (text.length === 0) {
             toastr.info("No logs to copy", "Easy Console Log");
@@ -642,6 +778,7 @@ function copyVisibleLogs() {
         navigator.clipboard.writeText(text).then(() => {
             toastr.success("Logs copied to clipboard", "Easy Console Log");
         }).catch(() => {
+            // Fallback for environments where clipboard API is restricted
             const textarea = document.createElement("textarea");
             textarea.value = text;
             textarea.style.position = "fixed";
@@ -657,7 +794,8 @@ function copyVisibleLogs() {
     }
 }
 
-// ── Log Filtering ──
+// ── Log Filtering (multi-field search — TauriTavern pattern) ──
+// Search across message, level, source, and target fields
 function getFilteredLogs() {
     try {
         const settings = extension_settings[extensionName];
@@ -669,7 +807,7 @@ function getFilteredLogs() {
         return logs.filter(log => {
             if (log.source !== activeSource) return false;
             if (activeFilter !== "ALL" && log.level !== activeFilter.toLowerCase()) return false;
-            if (searchTerm && !log.message.toLowerCase().includes(searchTerm)) return false;
+            if (searchTerm && !matchSearch(log, searchTerm)) return false;
             return true;
         });
     } catch (e) {
@@ -678,12 +816,27 @@ function getFilteredLogs() {
     }
 }
 
+// Multi-field search: matches against message, level, source, target
+function matchSearch(log, term) {
+    const fields = [
+        log.message || "",
+        log.level || "",
+        log.source || "",
+        log.target || "",
+    ];
+    return fields.some(field => field.toLowerCase().includes(term));
+}
+
 // ── Stats ──
 function updateStats() {
     try {
-        const entries = logs.length;
-        const warnings = logs.filter(l => l.level === "warn").length;
-        const errors = logs.filter(l => l.level === "error").length;
+        // Stats are source-specific (show counts for current view)
+        const settings = extension_settings[extensionName];
+        const activeSource = settings?.activeSource || "frontend";
+        const sourceLogs = logs.filter(l => l.source === activeSource);
+        const entries = sourceLogs.length;
+        const warnings = sourceLogs.filter(l => l.level === "warn").length;
+        const errors = sourceLogs.filter(l => l.level === "error").length;
 
         const entriesEl = document.getElementById("ecl_stats_entries");
         const warningsEl = document.getElementById("ecl_stats_warnings");
@@ -702,12 +855,53 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// ── Toast Notifications ──
-function showToast(level, args) {
+// ============================================================
+// DEDUPLICATED TOAST NOTIFICATIONS (TauriTavern repeatCount pattern)
+// ============================================================
+// Instead of showing a new toast for every warn/error, we deduplicate:
+// - If the same message was shown within TOAST_DEDUP_WINDOW_MS,
+//   we increment a repeat counter on the existing toast instead
+//   of creating a new one. Prevents notification spam.
+function dedupedToast(level, args) {
     try {
+        const message = formatArgs(args);
+        const dedupKey = `${level}:${message.substring(0, 60)}`;
+        const now = Date.now();
+
+        const existing = toastDedupMap.get(dedupKey);
+        if (existing && (now - existing.lastShownMs) < TOAST_DEDUP_WINDOW_MS) {
+            // Duplicate within window — increment counter, update existing toast
+            existing.count++;
+            existing.lastShownMs = now;
+
+            // Update the existing toast's counter display
+            const toastEl = document.querySelector(".ecl-toast");
+            if (toastEl) {
+                const counterEl = toastEl.querySelector(".ecl-toast-count");
+                if (counterEl) {
+                    counterEl.textContent = ` (${existing.count})`;
+                } else {
+                    const span = document.createElement("span");
+                    span.className = "ecl-toast-count";
+                    span.textContent = ` (${existing.count})`;
+                    toastEl.appendChild(span);
+                }
+                // Extend visibility timer
+                if (toastTimeout) clearTimeout(toastTimeout);
+                toastTimeout = setTimeout(() => {
+                    const t = document.querySelector(".ecl-toast");
+                    if (t) {
+                        t.style.animation = "eclToastOut 0.3s ease forwards";
+                        setTimeout(() => t.remove(), 300);
+                    }
+                }, 4000);
+            }
+            return; // Don't create new toast
+        }
+
+        // New unique toast — remove any existing one first
         $(".ecl-toast").remove();
 
-        const message = formatArgs(args);
         const truncatedMsg = message.length > 80 ? message.substring(0, 80) + "..." : message;
         const toastClass = level === "error" ? "ecl-toast-error" : "ecl-toast-warn";
         const icon = level === "error" ? "fa-solid fa-circle-exclamation" : "fa-solid fa-triangle-exclamation";
@@ -721,10 +915,23 @@ function showToast(level, args) {
 
         $("body").append(toast);
 
+        // Record in dedup map
+        toastDedupMap.set(dedupKey, { count: 1, lastShownMs: now });
+
+        // Clean old entries from dedup map (prevent unbounded growth)
+        for (const [key, val] of toastDedupMap) {
+            if (now - val.lastShownMs > TOAST_DEDUP_WINDOW_MS * 2) {
+                toastDedupMap.delete(key);
+            }
+        }
+
         if (toastTimeout) clearTimeout(toastTimeout);
         toastTimeout = setTimeout(() => {
-            toast.css("animation", "eclToastOut 0.3s ease forwards");
-            setTimeout(() => toast.remove(), 300);
+            const t = document.querySelector(".ecl-toast");
+            if (t) {
+                t.style.animation = "eclToastOut 0.3s ease forwards";
+                setTimeout(() => t.remove(), 300);
+            }
         }, 4000);
 
         toast.on("click", () => {
