@@ -2,14 +2,21 @@
 // Easy Console Log — SillyTavern Extension
 // Captures and displays console logs in a premium overlay UI
 // ============================================================
+//
+// CRITICAL SAFETY MEASURES:
+// 1. Only import what we ACTUALLY USE — unused imports can crash ST
+// 2. Console interception is DELAYED until ST finishes loading
+// 3. Every operation is wrapped in try/catch to prevent ST hangs
+// 4. addLog is protected against recursive loops during interception
+//
 
-import { extension_settings, getContext, loadExtensionSettings } from "../../../extensions.js";
+import { extension_settings } from "../../../extensions.js";
 import { saveSettingsDebounced } from "../../../../script.js";
 
 const extensionName = "Easy-console-log";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 
-// ── Settings ──
+// ── State ──
 const defaultSettings = {
     enabled: true,
     captureBrowserConsole: true,
@@ -21,198 +28,305 @@ const defaultSettings = {
 
 let logs = [];
 let originalConsole = {};
+let isConsoleIntercepted = false;
 let isMonitorOpen = false;
 let autoScrollEnabled = true;
 let toastTimeout = null;
+let isInsideAddLog = false; // Anti-recursion guard
 
-// ── Initialize ──
+// ── Initialize (safe, non-blocking) ──
 jQuery(async () => {
-    console.log(`[${extensionName}] Loading...`);
-
     try {
-        // Load settings HTML (gear icon drawer)
+        // Load settings HTML (gear icon drawer) — append to right panel
         const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
         $("#extensions_settings2").append(settingsHtml);
 
-        // Load monitor HTML (overlay panel)
+        // Load monitor HTML (overlay) — append to body
         const monitorHtml = await $.get(`${extensionFolderPath}/monitor.html`);
         $("body").append(monitorHtml);
 
-        // Load saved settings
-        loadSettings();
+        // Initialize settings storage
+        initSettings();
 
-        // Bind all event handlers
+        // Bind UI events (safe, no side effects)
         bindEvents();
 
-        // Intercept console methods
-        interceptConsole();
+        // IMPORTANT: Do NOT intercept console during ST initialization!
+        // SillyTavern heavily relies on console during startup.
+        // Intercepting too early breaks the loading flow.
+        // We delay interception until ST is fully loaded.
+        waitForSillyTavernReady().then(() => {
+            if (extension_settings[extensionName].captureBrowserConsole) {
+                interceptConsole();
+            }
+        });
 
-        console.log(`[${extensionName}] Loaded successfully`);
     } catch (error) {
-        console.error(`[${extensionName}] Failed to load:`, error);
+        // Use native console.error here — our interception isn't active yet
+        // so this won't cause recursion or hang ST
+        if (originalConsole.error) {
+            originalConsole.error(`[${extensionName}] Failed to load:`, error);
+        } else {
+            // Fallback: just log to browser console natively
+            console.error(`[${extensionName}] Failed to load:`, error);
+        }
     }
 });
 
+// ── Wait for SillyTavern to finish loading ──
+// ST emits various events when it's done initializing.
+// We wait for the app to be ready before touching console methods.
+function waitForSillyTavernReady() {
+    return new Promise((resolve) => {
+        // Strategy 1: Listen for ST's app_ready event
+        const onReady = () => {
+            resolve();
+        };
+
+        // Try event-based detection
+        if (typeof eventSource !== "undefined" && eventSource.addEventListener) {
+            eventSource.addEventListener("app_ready", onReady, { once: true });
+        }
+
+        // Strategy 2: Also set a timeout as fallback.
+        // Some ST versions may not emit app_ready, or it may fire
+        // before our listener is attached.
+        // 5 seconds is enough for ST to finish its critical init.
+        setTimeout(() => {
+            resolve();
+        }, 5000);
+    });
+}
+
 // ── Settings Management ──
-function loadSettings() {
-    extension_settings[extensionName] = extension_settings[extensionName] || {};
-    if (Object.keys(extension_settings[extensionName]).length === 0) {
-        Object.assign(extension_settings[extensionName], defaultSettings);
-    }
+function initSettings() {
+    try {
+        extension_settings[extensionName] = extension_settings[extensionName] || {};
+        if (Object.keys(extension_settings[extensionName]).length === 0) {
+            Object.assign(extension_settings[extensionName], defaultSettings);
+        }
 
-    const settings = extension_settings[extensionName];
+        const settings = extension_settings[extensionName];
 
-    // Apply saved settings to UI
-    $("#ecl_capture_checkbox").prop("checked", settings.captureBrowserConsole);
-    
-    // Restore source toggle state
-    $(".ecl-toggle-btn").removeClass("ecl-toggle-active");
-    $(`.ecl-toggle-btn[data-source="${settings.activeSource}"]`).addClass("ecl-toggle-active");
+        // Apply saved settings to UI — only touch UI elements that exist
+        const captureCheckbox = document.getElementById("ecl_capture_checkbox");
+        if (captureCheckbox) {
+            captureCheckbox.checked = settings.captureBrowserConsole;
+        }
 
-    // Restore filter state
-    $(".ecl-filter-pill").removeClass("ecl-filter-active");
-    $(`.ecl-filter-pill[data-level="${settings.activeFilter}"]`).addClass("ecl-filter-active");
+        // Restore source toggle state
+        $(".ecl-toggle-btn").removeClass("ecl-toggle-active");
+        const activeSourceBtn = $(`.ecl-toggle-btn[data-source="${settings.activeSource}"]`);
+        if (activeSourceBtn.length) activeSourceBtn.addClass("ecl-toggle-active");
 
-    // Update capture state
-    if (settings.captureBrowserConsole) {
-        interceptConsole();
-    } else {
-        restoreConsole();
+        // Restore filter state
+        $(".ecl-filter-pill").removeClass("ecl-filter-active");
+        const activeFilterBtn = $(`.ecl-filter-pill[data-level="${settings.activeFilter}"]`);
+        if (activeFilterBtn.length) activeFilterBtn.addClass("ecl-filter-active");
+    } catch (e) {
+        console.error(`[${extensionName}] initSettings error:`, e);
     }
 }
 
 function saveSetting(key, value) {
-    extension_settings[extensionName][key] = value;
-    saveSettingsDebounced();
+    try {
+        extension_settings[extensionName][key] = value;
+        saveSettingsDebounced();
+    } catch (e) {
+        console.error(`[${extensionName}] saveSetting error:`, e);
+    }
 }
 
 // ── Event Binding ──
 function bindEvents() {
-    // Open monitor button
-    $("#easy_console_log_open_btn").on("click", openMonitor);
+    try {
+        // Open monitor button
+        $("#easy_console_log_open_btn").on("click", openMonitor);
 
-    // Close monitor
-    $("#ecl_close_btn").on("click", closeMonitor);
-    $(".ecl-overlay-backdrop").on("click", closeMonitor);
+        // Close monitor
+        $("#ecl_close_btn").on("click", closeMonitor);
+        $(".ecl-overlay-backdrop").on("click", closeMonitor);
 
-    // Source toggle
-    $(".ecl-toggle-btn").on("click", function () {
-        $(".ecl-toggle-btn").removeClass("ecl-toggle-active");
-        $(this).addClass("ecl-toggle-active");
-        saveSetting("activeSource", $(this).data("source"));
-        renderLogs();
-    });
+        // Source toggle
+        $(".ecl-toggle-btn").on("click", function () {
+            $(".ecl-toggle-btn").removeClass("ecl-toggle-active");
+            $(this).addClass("ecl-toggle-active");
+            saveSetting("activeSource", $(this).data("source"));
+            renderLogs();
+        });
 
-    // Capture checkbox
-    $("#ecl_capture_checkbox").on("change", function () {
-        const checked = $(this).prop("checked");
-        saveSetting("captureBrowserConsole", checked);
-        if (checked) {
-            interceptConsole();
-        } else {
-            restoreConsole();
-        }
-    });
+        // Capture checkbox
+        $("#ecl_capture_checkbox").on("change", function () {
+            const checked = $(this).prop("checked");
+            saveSetting("captureBrowserConsole", checked);
+            if (checked) {
+                interceptConsole();
+            } else {
+                restoreConsole();
+            }
+        });
 
-    // Search input
-    $("#ecl_search_input").on("input", function () {
-        renderLogs();
-    });
+        // Search input
+        let searchDebounce = null;
+        $("#ecl_search_input").on("input", function () {
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(() => renderLogs(), 150);
+        });
 
-    // Copy visible
-    $("#ecl_copy_btn").on("click", copyVisibleLogs);
+        // Copy visible
+        $("#ecl_copy_btn").on("click", copyVisibleLogs);
 
-    // Clear logs
-    $("#ecl_clear_btn").on("click", clearLogs);
+        // Clear logs
+        $("#ecl_clear_btn").on("click", clearLogs);
 
-    // Level filter pills
-    $(".ecl-filter-pill").on("click", function () {
-        $(".ecl-filter-pill").removeClass("ecl-filter-active");
-        $(this).addClass("ecl-filter-active");
-        saveSetting("activeFilter", $(this).data("level"));
-        renderLogs();
-    });
+        // Level filter pills
+        $(".ecl-filter-pill").on("click", function () {
+            $(".ecl-filter-pill").removeClass("ecl-filter-active");
+            $(this).addClass("ecl-filter-active");
+            saveSetting("activeFilter", $(this).data("level"));
+            renderLogs();
+        });
 
-    // Auto-scroll indicator click
-    $("#ecl_autoscroll_indicator").on("click", function () {
-        scrollToBottom();
-        $(this).hide();
-    });
+        // Auto-scroll indicator click
+        $("#ecl_autoscroll_indicator").on("click", function () {
+            scrollToBottom();
+            $(this).hide();
+        });
+    } catch (e) {
+        console.error(`[${extensionName}] bindEvents error:`, e);
+    }
 }
 
 // ── Monitor Open / Close ──
 function openMonitor() {
     isMonitorOpen = true;
-    $("#easy-console-log-monitor-overlay").show();
+    const overlay = document.getElementById("easy-console-log-monitor-overlay");
+    if (overlay) overlay.style.display = "flex";
     renderLogs();
     scrollToBottom();
 }
 
 function closeMonitor() {
     isMonitorOpen = false;
-    $("#easy-console-log-monitor-overlay").hide();
+    const overlay = document.getElementById("easy-console-log-monitor-overlay");
+    if (overlay) overlay.style.display = "none";
 }
 
-// ── Console Interception ──
+// ── Console Interception (safe, delayed) ──
 function interceptConsole() {
-    // Store originals so we can restore them
-    originalConsole.log   = console.log;
-    originalConsole.info  = console.info;
-    originalConsole.warn  = console.warn;
-    originalConsole.error = console.error;
-    originalConsole.debug = console.debug;
+    // Prevent double-interception
+    if (isConsoleIntercepted) return;
 
-    const settings = extension_settings[extensionName];
+    try {
+        // Store originals FIRST — before any replacement
+        originalConsole.log   = console.log.bind(console);
+        originalConsole.info  = console.info.bind(console);
+        originalConsole.warn  = console.warn.bind(console);
+        originalConsole.error = console.error.bind(console);
+        originalConsole.debug = console.debug.bind(console);
 
-    console.log = function (...args) {
-        originalConsole.log.apply(console, args);
-        if (settings.captureBrowserConsole) {
-            addLog("info", args, "browser");
-        }
-    };
+        const settings = extension_settings[extensionName];
 
-    console.info = function (...args) {
-        originalConsole.info.apply(console, args);
-        if (settings.captureBrowserConsole) {
-            addLog("info", args, "browser");
-        }
-    };
+        console.log = function (...args) {
+            try {
+                originalConsole.log(...args);
+                if (settings.captureBrowserConsole) {
+                    safeAddLog("info", args, "browser");
+                }
+            } catch (e) {
+                originalConsole.error(`[${extensionName}] console.log interceptor error:`, e);
+            }
+        };
 
-    console.warn = function (...args) {
-        originalConsole.warn.apply(console, args);
-        if (settings.captureBrowserConsole) {
-            addLog("warn", args, "browser");
-            if (settings.showNotifications) showToast("warn", args);
-        }
-    };
+        console.info = function (...args) {
+            try {
+                originalConsole.info(...args);
+                if (settings.captureBrowserConsole) {
+                    safeAddLog("info", args, "browser");
+                }
+            } catch (e) {
+                originalConsole.error(`[${extensionName}] console.info interceptor error:`, e);
+            }
+        };
 
-    console.error = function (...args) {
-        originalConsole.error.apply(console, args);
-        if (settings.captureBrowserConsole) {
-            addLog("error", args, "browser");
-            if (settings.showNotifications) showToast("error", args);
-        }
-    };
+        console.warn = function (...args) {
+            try {
+                originalConsole.warn(...args);
+                if (settings.captureBrowserConsole) {
+                    safeAddLog("warn", args, "browser");
+                    if (settings.showNotifications) showToast("warn", args);
+                }
+            } catch (e) {
+                originalConsole.error(`[${extensionName}] console.warn interceptor error:`, e);
+            }
+        };
 
-    console.debug = function (...args) {
-        originalConsole.debug.apply(console, args);
-        if (settings.captureBrowserConsole) {
-            addLog("debug", args, "browser");
-        }
-    };
+        console.error = function (...args) {
+            try {
+                originalConsole.error(...args);
+                if (settings.captureBrowserConsole) {
+                    safeAddLog("error", args, "browser");
+                    if (settings.showNotifications) showToast("error", args);
+                }
+            } catch (e) {
+                // If our error interceptor itself errors, use original directly
+                // Don't try to log this through our system — infinite loop risk
+                originalConsole.error(`[${extensionName}] console.error interceptor error:`, e);
+            }
+        };
+
+        console.debug = function (...args) {
+            try {
+                originalConsole.debug(...args);
+                if (settings.captureBrowserConsole) {
+                    safeAddLog("debug", args, "browser");
+                }
+            } catch (e) {
+                originalConsole.error(`[${extensionName}] console.debug interceptor error:`, e);
+            }
+        };
+
+        isConsoleIntercepted = true;
+    } catch (e) {
+        // If interception setup itself fails, make sure we don't break ST
+        console.error(`[${extensionName}] interceptConsole setup error:`, e);
+    }
 }
 
 function restoreConsole() {
-    if (originalConsole.log)   console.log   = originalConsole.log;
-    if (originalConsole.info)  console.info  = originalConsole.info;
-    if (originalConsole.warn)  console.warn  = originalConsole.warn;
-    if (originalConsole.error) console.error  = originalConsole.error;
-    if (originalConsole.debug) console.debug  = originalConsole.debug;
+    if (!isConsoleIntercepted) return;
+
+    try {
+        if (originalConsole.log)   console.log   = originalConsole.log;
+        if (originalConsole.info)  console.info  = originalConsole.info;
+        if (originalConsole.warn)  console.warn  = originalConsole.warn;
+        if (originalConsole.error) console.error  = originalConsole.error;
+        if (originalConsole.debug) console.debug  = originalConsole.debug;
+        isConsoleIntercepted = false;
+    } catch (e) {
+        console.error(`[${extensionName}] restoreConsole error:`, e);
+    }
 }
 
-// ── Log Management ──
+// ── Safe Log Add (with anti-recursion guard) ──
+// CRITICAL: If addLog itself triggers console calls (e.g., through renderLogs),
+// and console is intercepted, we'd get infinite recursion.
+// The isInsideAddLog flag prevents this.
+function safeAddLog(level, args, source) {
+    if (isInsideAddLog) return; // Anti-recursion: drop nested calls
+    isInsideAddLog = true;
+
+    try {
+        addLog(level, args, source);
+    } catch (e) {
+        originalConsole.error(`[${extensionName}] addLog error:`, e);
+    } finally {
+        isInsideAddLog = false;
+    }
+}
+
 function addLog(level, args, source) {
-    const maxEntries = extension_settings[extensionName].maxEntries || defaultSettings.maxEntries;
+    const maxEntries = extension_settings[extensionName]?.maxEntries || defaultSettings.maxEntries;
     const now = new Date();
     const timestamp = now.toLocaleTimeString("en-GB", {
         hour: "2-digit",
@@ -227,7 +341,6 @@ function addLog(level, args, source) {
         message,
         source: source || "frontend",
         timestamp,
-        rawArgs: args,
     });
 
     // Trim if over max
@@ -244,10 +357,11 @@ function addLog(level, args, source) {
         const container = document.getElementById("ecl_log_container");
         if (container) {
             const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
-            if (isNearBottom || autoScrollEnabled) {
+            if (isNearBottom) {
                 scrollToBottom();
             } else {
-                $("#ecl_autoscroll_indicator").show();
+                const indicator = document.getElementById("ecl_autoscroll_indicator");
+                if (indicator) indicator.style.display = "flex";
             }
         }
     } else {
@@ -277,94 +391,104 @@ function clearLogs() {
 }
 
 function copyVisibleLogs() {
-    const visibleEntries = getFilteredLogs();
-    const text = visibleEntries.map(log => {
-        return `[${log.timestamp}] [${log.level.toUpperCase()}] [${log.source}] ${log.message}`;
-    }).join("\n");
+    try {
+        const visibleEntries = getFilteredLogs();
+        const text = visibleEntries.map(log => {
+            return `[${log.timestamp}] [${log.level.toUpperCase()}] [${log.source}] ${log.message}`;
+        }).join("\n");
 
-    if (text.length === 0) {
-        toastr.info("No logs to copy", "Easy Console Log");
-        return;
+        if (text.length === 0) {
+            toastr.info("No logs to copy", "Easy Console Log");
+            return;
+        }
+
+        navigator.clipboard.writeText(text).then(() => {
+            toastr.success("Logs copied to clipboard", "Easy Console Log");
+        }).catch(() => {
+            // Fallback for older browsers / mobile
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            textarea.style.position = "fixed";
+            textarea.style.opacity = "0";
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textarea);
+            toastr.success("Logs copied to clipboard", "Easy Console Log");
+        });
+    } catch (e) {
+        console.error(`[${extensionName}] copyVisibleLogs error:`, e);
     }
-
-    navigator.clipboard.writeText(text).then(() => {
-        toastr.success("Logs copied to clipboard", "Easy Console Log");
-    }).catch(() => {
-        // Fallback for older browsers
-        const textarea = document.createElement("textarea");
-        textarea.value = text;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textarea);
-        toastr.success("Logs copied to clipboard", "Easy Console Log");
-    });
 }
 
 // ── Log Filtering & Rendering ──
 function getFilteredLogs() {
-    const settings = extension_settings[extensionName];
-    const activeSource = settings.activeSource || "frontend";
-    const activeFilter = settings.activeFilter || "ALL";
-    const searchTerm = ($("#ecl_search_input").val() || "").toLowerCase().trim();
+    try {
+        const settings = extension_settings[extensionName];
+        const activeSource = settings?.activeSource || "frontend";
+        const activeFilter = settings?.activeFilter || "ALL";
+        const searchInput = document.getElementById("ecl_search_input");
+        const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : "";
 
-    return logs.filter(log => {
-        // Source filter
-        if (log.source !== activeSource) return false;
-
-        // Level filter
-        if (activeFilter !== "ALL" && log.level !== activeFilter.toLowerCase()) return false;
-
-        // Search filter
-        if (searchTerm && !log.message.toLowerCase().includes(searchTerm)) return false;
-
-        return true;
-    });
+        return logs.filter(log => {
+            if (log.source !== activeSource) return false;
+            if (activeFilter !== "ALL" && log.level !== activeFilter.toLowerCase()) return false;
+            if (searchTerm && !log.message.toLowerCase().includes(searchTerm)) return false;
+            return true;
+        });
+    } catch (e) {
+        console.error(`[${extensionName}] getFilteredLogs error:`, e);
+        return [];
+    }
 }
 
 function renderLogs() {
-    const container = document.getElementById("ecl_log_container");
-    if (!container) return;
+    try {
+        const container = document.getElementById("ecl_log_container");
+        if (!container) return;
 
-    const filteredLogs = getFilteredLogs();
+        const filteredLogs = getFilteredLogs();
 
-    if (filteredLogs.length === 0) {
-        const emptyMsg = logs.length === 0
-            ? "No logs captured yet. Logs will appear here in real-time."
-            : "No logs match your current filter.";
-        container.innerHTML = `
-            <div class="ecl-log-empty">
-                <span class="fa-solid fa-terminal"></span>
-                <span>${emptyMsg}</span>
-            </div>
-        `;
-        return;
-    }
-
-    // Build HTML for all visible entries
-    const html = filteredLogs.map(log => {
-        const levelClass = `ecl-level-${log.level}`;
-        const badgeClass = `ecl-badge-${log.level}`;
-
-        // Sanitize and format message for display
-        const safeMessage = escapeHtml(log.message)
-            .replace(/`([^`]+)`/g, '<code class="ecl-inline-code">$1</code>');
-
-        return `
-            <div class="ecl-log-entry ${levelClass}">
-                <div class="ecl-log-entry-meta">
-                    <span class="ecl-log-timestamp">${log.timestamp}</span>
-                    <span class="ecl-log-level-badge ${badgeClass}">${log.level.toUpperCase()}</span>
-                    <span class="ecl-log-source">${log.source}</span>
+        if (filteredLogs.length === 0) {
+            const emptyMsg = logs.length === 0
+                ? "No logs captured yet. Logs will appear here in real-time."
+                : "No logs match your current filter.";
+            container.innerHTML = `
+                <div class="ecl-log-empty">
+                    <span class="fa-solid fa-terminal"></span>
+                    <span>${emptyMsg}</span>
                 </div>
-                <div class="ecl-log-message">${safeMessage}</div>
-            </div>
-        `;
-    }).join("");
+            `;
+            return;
+        }
 
-    container.innerHTML = html;
+        // Build HTML for all visible entries
+        const html = filteredLogs.map(log => {
+            const levelClass = `ecl-level-${log.level}`;
+            const badgeClass = `ecl-badge-${log.level}`;
+
+            const safeMessage = escapeHtml(log.message)
+                .replace(/`([^`]+)`/g, '<code class="ecl-inline-code">$1</code>');
+
+            return `
+                <div class="ecl-log-entry ${levelClass}">
+                    <div class="ecl-log-entry-meta">
+                        <span class="ecl-log-timestamp">${log.timestamp}</span>
+                        <span class="ecl-log-level-badge ${badgeClass}">${log.level.toUpperCase()}</span>
+                        <span class="ecl-log-source">${log.source}</span>
+                    </div>
+                    <div class="ecl-log-message">${safeMessage}</div>
+                </div>
+            `;
+        }).join("");
+
+        container.innerHTML = html;
+    } catch (e) {
+        // Use originalConsole here to avoid recursion
+        if (originalConsole.error) {
+            originalConsole.error(`[${extensionName}] renderLogs error:`, e);
+        }
+    }
 }
 
 function escapeHtml(text) {
@@ -375,13 +499,21 @@ function escapeHtml(text) {
 
 // ── Stats ──
 function updateStats() {
-    const entries = logs.length;
-    const warnings = logs.filter(l => l.level === "warn").length;
-    const errors = logs.filter(l => l.level === "error").length;
+    try {
+        const entries = logs.length;
+        const warnings = logs.filter(l => l.level === "warn").length;
+        const errors = logs.filter(l => l.level === "error").length;
 
-    $("#ecl_stats_entries").text(`${entries} entries`);
-    $("#ecl_stats_warnings").text(`${warnings} warnings`);
-    $("#ecl_stats_errors").text(`${errors} errors`);
+        const entriesEl = document.getElementById("ecl_stats_entries");
+        const warningsEl = document.getElementById("ecl_stats_warnings");
+        const errorsEl = document.getElementById("ecl_stats_errors");
+
+        if (entriesEl) entriesEl.textContent = `${entries} entries`;
+        if (warningsEl) warningsEl.textContent = `${warnings} warnings`;
+        if (errorsEl) errorsEl.textContent = `${errors} errors`;
+    } catch (e) {
+        // Silent fail — stats are non-critical
+    }
 }
 
 // ── Auto-scroll ──
@@ -389,46 +521,44 @@ function scrollToBottom() {
     const container = document.getElementById("ecl_log_container");
     if (container) {
         container.scrollTop = container.scrollHeight;
-        $("#ecl_autoscroll_indicator").hide();
+        const indicator = document.getElementById("ecl_autoscroll_indicator");
+        if (indicator) indicator.style.display = "none";
     }
 }
 
 // ── Toast Notifications ──
 function showToast(level, args) {
-    // Remove existing toast
-    $(".ecl-toast").remove();
+    try {
+        // Remove existing toast
+        $(".ecl-toast").remove();
 
-    const message = formatArgs(args);
-    const truncatedMsg = message.length > 80 ? message.substring(0, 80) + "..." : message;
-    const toastClass = level === "error" ? "ecl-toast-error" : "ecl-toast-warn";
-    const icon = level === "error" ? "fa-solid fa-circle-exclamation" : "fa-solid fa-triangle-exclamation";
+        const message = formatArgs(args);
+        const truncatedMsg = message.length > 80 ? message.substring(0, 80) + "..." : message;
+        const toastClass = level === "error" ? "ecl-toast-error" : "ecl-toast-warn";
+        const icon = level === "error" ? "fa-solid fa-circle-exclamation" : "fa-solid fa-triangle-exclamation";
 
-    const toast = $(`
-        <div class="ecl-toast ${toastClass}">
-            <span class="${icon}"></span>
-            <span>${escapeHtml(truncatedMsg)}</span>
-        </div>
-    `);
+        const toast = $(`
+            <div class="ecl-toast ${toastClass}">
+                <span class="${icon}"></span>
+                <span>${escapeHtml(truncatedMsg)}</span>
+            </div>
+        `);
 
-    $("body").append(toast);
+        $("body").append(toast);
 
-    // Auto-remove after 4 seconds
-    if (toastTimeout) clearTimeout(toastTimeout);
-    toastTimeout = setTimeout(() => {
-        toast.css("animation", "eclToastOut 0.3s ease forwards");
-        setTimeout(() => toast.remove(), 300);
-    }, 4000);
+        // Auto-remove after 4 seconds
+        if (toastTimeout) clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(() => {
+            toast.css("animation", "eclToastOut 0.3s ease forwards");
+            setTimeout(() => toast.remove(), 300);
+        }, 4000);
 
-    // Click to dismiss
-    toast.on("click", () => {
-        toast.css("animation", "eclToastOut 0.3s ease forwards");
-        setTimeout(() => toast.remove(), 300);
-    });
-}
-
-// ── Cleanup on extension unload (if ST supports it) ──
-function unloadExtension() {
-    restoreConsole();
-    $(".ecl-toast").remove();
-    $("#easy-console-log-monitor-overlay").remove();
+        // Click to dismiss
+        toast.on("click", () => {
+            toast.css("animation", "eclToastOut 0.3s ease forwards");
+            setTimeout(() => toast.remove(), 300);
+        });
+    } catch (e) {
+        // Toasts are non-critical, silent fail
+    }
 }
