@@ -4,77 +4,73 @@
 
     <!-- Monitor panel -->
     <div class="ecl-monitor-panel">
-        <!-- Header -->
-        <div class="ecl-header">
-            <div class="ecl-header-left">
-                <div class="ecl-title">Application Logs</div>
-                <div class="ecl-subtitle">Real-time console log monitor. Errors and warnings also appear as floating notifications.</div>
+        <!-- Fixed controls section — never scrolls, never shrinks -->
+        <div class="ecl-controls">
+
+            <!-- Header -->
+            <div class="ecl-header">
+                <div class="ecl-header-left">
+                    <div class="ecl-title">Application Logs</div>
+                    <div class="ecl-subtitle">Real-time console log monitor. Newest logs appear at the top.</div>
+                </div>
+                <div class="ecl-header-right">
+                    <button id="ecl_close_btn" class="ecl-close-btn fa-solid fa-xmark"></button>
+                </div>
             </div>
-            <div class="ecl-header-right">
-                <button id="ecl_close_btn" class="ecl-close-btn fa-solid fa-xmark"></button>
+
+            <!-- Source toggle + Stats (compact row) -->
+            <div class="ecl-meta-row">
+                <div class="ecl-toggle-group">
+                    <button class="ecl-toggle-btn ecl-toggle-active" data-source="frontend">Frontend</button>
+                    <button class="ecl-toggle-btn" data-source="backend">Backend</button>
+                </div>
+                <div class="ecl-stats-bar">
+                    <span id="ecl_stats_entries">0</span> ·
+                    <span id="ecl_stats_warnings" class="ecl-stat-warn">0</span> ·
+                    <span id="ecl_stats_errors" class="ecl-stat-error">0</span>
+                </div>
             </div>
-        </div>
 
-        <!-- Source toggle -->
-        <div class="ecl-source-toggle">
-            <div class="ecl-toggle-group">
-                <button class="ecl-toggle-btn ecl-toggle-active" data-source="frontend">Frontend</button>
-                <button class="ecl-toggle-btn" data-source="backend">Backend</button>
+            <!-- Search -->
+            <div class="ecl-search-wrap">
+                <span class="ecl-search-icon fa-solid fa-magnifying-glass"></span>
+                <input id="ecl_search_input" class="ecl-search-input" type="text" placeholder="Search logs..." />
             </div>
+
+            <!-- Controls row: capture + actions + filter pills -->
+            <div class="ecl-toolbar">
+                <div class="ecl-toolbar-left">
+                    <label class="ecl-checkbox-label">
+                        <input id="ecl_capture_checkbox" type="checkbox" checked />
+                        <span class="ecl-checkbox-custom"></span>
+                        <span class="ecl-checkbox-text">Capture</span>
+                    </label>
+                </div>
+                <div class="ecl-toolbar-center">
+                    <button class="ecl-filter-pill ecl-filter-active" data-level="ALL">ALL</button>
+                    <button class="ecl-filter-pill" data-level="DEBUG">DBG</button>
+                    <button class="ecl-filter-pill" data-level="INFO">INF</button>
+                    <button class="ecl-filter-pill" data-level="WARN">WRN</button>
+                    <button class="ecl-filter-pill" data-level="ERROR">ERR</button>
+                </div>
+                <div class="ecl-toolbar-right">
+                    <button id="ecl_copy_btn" class="ecl-action-btn ecl-action-sm" title="Copy visible logs">
+                        <span class="fa-solid fa-copy"></span>
+                    </button>
+                    <button id="ecl_clear_btn" class="ecl-action-btn ecl-action-sm" title="Clear all logs">
+                        <span class="fa-solid fa-trash-can"></span>
+                    </button>
+                </div>
+            </div>
+
         </div>
 
-        <!-- Stats bar -->
-        <div id="ecl_stats_bar" class="ecl-stats-bar">
-            <span id="ecl_stats_entries">0 entries</span> · 
-            <span id="ecl_stats_warnings" class="ecl-stat-warn">0 warnings</span> · 
-            <span id="ecl_stats_errors" class="ecl-stat-error">0 errors</span>
-        </div>
-
-        <!-- Search -->
-        <div class="ecl-search-wrap">
-            <span class="ecl-search-icon fa-solid fa-magnifying-glass"></span>
-            <input id="ecl_search_input" class="ecl-search-input" type="text" placeholder="Search logs..." />
-        </div>
-
-        <!-- Capture checkbox -->
-        <div class="ecl-capture-row">
-            <label class="ecl-checkbox-label">
-                <input id="ecl_capture_checkbox" type="checkbox" checked />
-                <span class="ecl-checkbox-custom"></span>
-                <span class="ecl-checkbox-text">Capture browser console</span>
-            </label>
-        </div>
-
-        <!-- Action buttons -->
-        <div class="ecl-action-row">
-            <button id="ecl_copy_btn" class="ecl-action-btn">
-                <span class="fa-solid fa-copy"></span> Copy Visible
-            </button>
-            <button id="ecl_clear_btn" class="ecl-action-btn">
-                <span class="fa-solid fa-trash-can"></span> Clear
-            </button>
-        </div>
-
-        <!-- Level filter pills -->
-        <div class="ecl-filter-row">
-            <button class="ecl-filter-pill ecl-filter-active" data-level="ALL">ALL</button>
-            <button class="ecl-filter-pill" data-level="DEBUG">DEBUG</button>
-            <button class="ecl-filter-pill" data-level="INFO">INFO</button>
-            <button class="ecl-filter-pill" data-level="WARN">WARN</button>
-            <button class="ecl-filter-pill" data-level="ERROR">ERROR</button>
-        </div>
-
-        <!-- Log entries container -->
+        <!-- Scrollable log section — only this scrolls -->
         <div id="ecl_log_container" class="ecl-log-container">
             <div id="ecl_log_empty" class="ecl-log-empty">
                 <span class="fa-solid fa-terminal"></span>
                 <span>No logs captured yet. Logs will appear here in real-time.</span>
             </div>
-        </div>
-
-        <!-- Auto-scroll indicator -->
-        <div id="ecl_autoscroll_indicator" class="ecl-autoscroll-indicator" style="display:none;">
-            <span class="fa-solid fa-arrow-down"></span> New logs below — click to scroll
         </div>
     </div>
 </div>

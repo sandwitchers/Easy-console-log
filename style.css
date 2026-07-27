@@ -1,25 +1,76 @@
 /* ============================================================
-   Easy Console Log — Premium Dark UI Styles
+   Easy Console Log — Premium Dark UI (v2 — Rugged Redesign)
+   ============================================================
+   Design principles:
+   - CSS isolation: reset block breaks ST's inherited styles
+   - All fixed UI elements have flex-shrink:0 + !important
+   - Only .ecl-log-container is scrollable/growable
+   - Newest logs render at TOP (no auto-scroll needed)
+   - Compact toolbar to maximize log viewing area
    ============================================================ */
+
+/* ── CSS RESET: Break all SillyTavern inherited styles ── */
+.ecl-overlay,
+.ecl-overlay *,
+.ecl-overlay *::before,
+.ecl-overlay *::after {
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    /* Reset only layout-affecting properties, keep font/color for our own styling */
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    position: static !important;
+    float: none !important;
+    flex: none !important;
+    flex-grow: 0 !important;
+    flex-shrink: 1 !important;
+    flex-basis: auto !important;
+    transform: none !important;
+    transition: none !important;
+    animation: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    z-index: auto !important;
+    text-align: start !important;
+    line-height: normal !important;
+    vertical-align: baseline !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: inherit !important;
+    font-size: inherit !important;
+    font-weight: inherit !important;
+    font-family: inherit !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    display: inline !important;
+}
+
 
 /* ── Settings Drawer (minimal entry point) ── */
 .easy-console-log-settings .easy-console-log-gear-icon {
-    margin-right: 6px;
-    color: #4A9EFF;
-    font-size: 14px;
-    transition: transform 0.3s ease;
+    margin-right: 6px !important;
+    color: #4A9EFF !important;
+    font-size: 14px !important;
+    transition: transform 0.3s ease !important;
 }
 
 .easy-console-log-settings .inline-drawer-toggle:hover .easy-console-log-gear-icon {
-    transform: rotate(90deg);
+    transform: rotate(90deg) !important;
 }
 
 .easy-console-log-open-btn-wrap {
-    margin-top: 10px;
+    margin-top: 10px !important;
 }
 
 .easy-console-log-open-btn {
-    width: 100%;
+    width: 100% !important;
     padding: 10px 16px !important;
     background: linear-gradient(135deg, #1e2a3a 0%, #1a1e2e 100%) !important;
     border: 1px solid #3a4a6a !important;
@@ -27,44 +78,48 @@
     color: #4A9EFF !important;
     font-size: 14px !important;
     font-weight: 600 !important;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    transition: all 0.2s ease !important;
 }
 
 .easy-console-log-open-btn:hover {
     background: linear-gradient(135deg, #2a3a5a 0%, #1e2e4e 100%) !important;
     border-color: #5a7aaa !important;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.2);
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.2) !important;
 }
 
 .easy-console-log-open-btn:active {
-    transform: translateY(0px);
+    transform: translateY(0px) !important;
 }
 
 .easy-console-log-minimal-footer {
-    text-align: center;
-    margin-top: 8px;
-    color: #666;
+    text-align: center !important;
+    margin-top: 8px !important;
+    color: #666 !important;
 }
 
 
-/* ── Overlay ── */
+/* ══════════════════════════════════════════════════════════
+   OVERLAY — Now applying ALL specific styles AFTER the reset
+   ══════════════════════════════════════════════════════════ */
+
 .ecl-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 99999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    animation: eclFadeIn 0.2s ease;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 99999 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: transparent !important;
+    animation: eclFadeIn 0.2s ease forwards !important;
 }
 
 @keyframes eclFadeIn {
@@ -73,38 +128,55 @@
 }
 
 .ecl-overlay-backdrop {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: rgba(0, 0, 0, 0.7) !important;
+    backdrop-filter: blur(4px) !important;
 }
 
 
 /* ── Monitor Panel ── */
 .ecl-monitor-panel {
     position: relative !important;
-    width: 95vw !important;
-    max-width: 480px !important;
-    max-height: 88vh !important;
+    width: 96vw !important;
+    max-width: 520px !important;
     height: 88vh !important;
+    max-height: 88vh !important;
     background: #121212 !important;
     border: 1px solid #2a2a2a !important;
     border-radius: 16px !important;
-    padding: 16px !important;
-    overflow: hidden !important;
+    padding: 14px !important;
     display: flex !important;
     flex-direction: column !important;
-    box-sizing: border-box !important;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(74, 158, 255, 0.1);
-    animation: eclSlideUp 0.3s ease;
+    flex-shrink: 0 !important;
+    flex-grow: 0 !important;
+    overflow: hidden !important;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(74, 158, 255, 0.1) !important;
+    animation: eclSlideUp 0.3s ease forwards !important;
 }
 
 @keyframes eclSlideUp {
-    from { transform: translateY(30px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
+    from { transform: translateY(30px) !important; opacity: 0 !important; }
+    to { transform: translateY(0) !important; opacity: 1 !important; }
+}
+
+
+/* ── Controls (fixed, non-scrollable section) ── */
+.ecl-controls {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-shrink: 0 !important;
+    flex-grow: 0 !important;
+    gap: 8px !important;
+    padding-bottom: 10px !important;
+    border-bottom: 1px solid #2a2a2a !important;
+    margin-bottom: 10px !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
 }
 
 
@@ -113,103 +185,106 @@
     display: flex !important;
     justify-content: space-between !important;
     align-items: flex-start !important;
-    margin-bottom: 12px !important;
     flex-shrink: 0 !important;
-    min-height: 0 !important;
 }
 
 .ecl-header-left {
-    flex: 1;
-    min-width: 0;
+    display: block !important;
+    flex-shrink: 0 !important;
 }
 
 .ecl-title {
-    font-size: 22px;
-    font-weight: 700;
-    color: #4A9EFF;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
+    display: block !important;
+    font-size: 22px !important;
+    font-weight: 700 !important;
+    color: #4A9EFF !important;
+    letter-spacing: -0.02em !important;
+    line-height: 1.2 !important;
 }
 
 .ecl-subtitle {
-    font-size: 13px;
-    color: #888;
-    margin-top: 4px;
-    line-height: 1.4;
+    display: block !important;
+    font-size: 13px !important;
+    color: #888 !important;
+    line-height: 1.4 !important;
+    margin-top: 4px !important;
 }
 
 .ecl-header-right {
-    margin-left: 12px;
+    display: block !important;
+    flex-shrink: 0 !important;
+    margin-left: 12px !important;
 }
 
 .ecl-close-btn {
-    background: none;
-    border: none;
-    color: #666;
-    font-size: 20px;
-    cursor: pointer;
-    padding: 4px;
-    transition: color 0.2s ease;
-    line-height: 1;
+    display: inline-block !important;
+    background: none !important;
+    border: none !important;
+    color: #666 !important;
+    font-size: 22px !important;
+    cursor: pointer !important;
+    padding: 2px 6px !important;
+    transition: color 0.2s ease !important;
+    line-height: 1 !important;
 }
 
 .ecl-close-btn:hover {
-    color: #fff;
+    color: #fff !important;
 }
 
 
-/* ── Source Toggle ── */
-.ecl-source-toggle {
-    margin-bottom: 12px !important;
+/* ── Meta Row (Source Toggle + Stats) ── */
+.ecl-meta-row {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
     flex-shrink: 0 !important;
 }
 
 .ecl-toggle-group {
-    display: flex;
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 8px;
-    padding: 3px;
+    display: flex !important;
+    background: #1e1e1e !important;
+    border: 1px solid #333 !important;
+    border-radius: 8px !important;
+    padding: 3px !important;
 }
 
 .ecl-toggle-btn {
-    flex: 1;
-    padding: 8px 16px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: #888;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    display: inline-block !important;
+    padding: 7px 14px !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 6px !important;
+    color: #888 !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
 }
 
 .ecl-toggle-btn.ecl-toggle-active {
-    background: #2a2a3a;
-    color: #fff;
-    font-weight: 600;
+    background: #2a2a3a !important;
+    color: #fff !important;
+    font-weight: 600 !important;
 }
 
 .ecl-toggle-btn:hover:not(.ecl-toggle-active) {
-    color: #bbb;
+    color: #bbb !important;
 }
 
-
-/* ── Stats Bar ── */
 .ecl-stats-bar {
+    display: inline-block !important;
     font-size: 12px !important;
     color: #777 !important;
-    margin-bottom: 12px !important;
     flex-shrink: 0 !important;
 }
 
 .ecl-stat-warn {
-    color: #f59e0b;
+    color: #f59e0b !important;
 }
 
 .ecl-stat-error {
-    color: #ef4444;
+    color: #ef4444 !important;
 }
 
 
@@ -220,358 +295,355 @@
     background: #1a1a1a !important;
     border: 1px solid #333 !important;
     border-radius: 8px !important;
-    padding: 2px 12px !important;
-    margin-bottom: 10px !important;
+    padding: 2px 10px !important;
     flex-shrink: 0 !important;
-    transition: border-color 0.2s ease;
+    transition: border-color 0.2s ease !important;
 }
 
 .ecl-search-wrap:focus-within {
-    border-color: #4A9EFF;
-    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.15);
+    border-color: #4A9EFF !important;
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.15) !important;
 }
 
 .ecl-search-icon {
-    color: #555;
-    font-size: 14px;
-    margin-right: 8px;
+    display: inline-block !important;
+    color: #555 !important;
+    font-size: 14px !important;
+    margin-right: 8px !important;
 }
 
 .ecl-search-input {
-    background: none;
-    border: none;
-    color: #fff;
-    font-size: 15px;
-    width: 100%;
-    padding: 10px 0;
-    outline: none;
+    display: inline-block !important;
+    background: none !important;
+    border: none !important;
+    color: #fff !important;
+    font-size: 15px !important;
+    width: 100% !important;
+    padding: 9px 0 !important;
+    outline: none !important;
 }
 
 .ecl-search-input::placeholder {
-    color: #555;
+    color: #555 !important;
 }
 
 
-/* ── Capture Checkbox ── */
-.ecl-capture-row {
-    margin-bottom: 10px !important;
+/* ── Toolbar (compact: Capture + Filter + Actions) ── */
+.ecl-toolbar {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    flex-shrink: 0 !important;
+    gap: 6px !important;
+}
+
+.ecl-toolbar-left {
+    display: flex !important;
+    align-items: center !important;
     flex-shrink: 0 !important;
 }
 
+.ecl-toolbar-center {
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+}
+
+.ecl-toolbar-center::-webkit-scrollbar {
+    display: none !important;
+}
+
+.ecl-toolbar-right {
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    flex-shrink: 0 !important;
+}
+
+/* ── Checkbox ── */
 .ecl-checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    user-select: none;
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    cursor: pointer !important;
+    user-select: none !important;
 }
 
 .ecl-checkbox-label input[type="checkbox"] {
-    display: none;
+    display: none !important;
 }
 
 .ecl-checkbox-custom {
-    width: 18px;
-    height: 18px;
-    border: 2px solid #555;
-    border-radius: 4px;
-    background: #1a1a1a;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    position: relative;
+    display: inline-flex !important;
+    width: 16px !important;
+    height: 16px !important;
+    border: 2px solid #555 !important;
+    border-radius: 3px !important;
+    background: #1a1a1a !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.15s ease !important;
+    position: relative !important;
 }
 
 .ecl-checkbox-custom::after {
-    content: '';
-    width: 10px;
-    height: 10px;
-    background: #4A9EFF;
-    border-radius: 2px;
-    opacity: 0;
-    transform: scale(0);
-    transition: all 0.15s ease;
+    content: '' !important;
+    display: block !important;
+    width: 8px !important;
+    height: 8px !important;
+    background: #4A9EFF !important;
+    border-radius: 2px !important;
+    opacity: 0 !important;
+    transform: scale(0) !important;
+    transition: all 0.15s ease !important;
 }
 
 .ecl-checkbox-label input[type="checkbox"]:checked + .ecl-checkbox-custom {
-    border-color: #4A9EFF;
-    background: rgba(74, 158, 255, 0.15);
+    border-color: #4A9EFF !important;
+    background: rgba(74, 158, 255, 0.15) !important;
 }
 
 .ecl-checkbox-label input[type="checkbox"]:checked + .ecl-checkbox-custom::after {
-    opacity: 1;
-    transform: scale(1);
+    opacity: 1 !important;
+    transform: scale(1) !important;
 }
 
 .ecl-checkbox-text {
-    font-size: 14px;
-    color: #ccc;
+    display: inline !important;
+    font-size: 13px !important;
+    color: #ccc !important;
 }
 
 
-/* ── Action Buttons ── */
-.ecl-action-row {
-    display: flex !important;
-    gap: 8px !important;
-    margin-bottom: 10px !important;
-    flex-shrink: 0 !important;
-}
-
-.ecl-action-btn {
-    flex: 1;
-    padding: 12px;
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 8px;
-    color: #aaa;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-}
-
-.ecl-action-btn:hover {
-    background: #2a2a2a;
-    border-color: #555;
-    color: #ddd;
-}
-
-.ecl-action-btn:active {
-    transform: scale(0.97);
-}
-
-
-/* ── Level Filter Pills ── */
-.ecl-filter-row {
-    display: flex !important;
-    gap: 6px !important;
-    margin-bottom: 10px !important;
-    overflow-x: auto !important;
-    scrollbar-width: none !important;
-    flex-shrink: 0 !important;
-}
-
-.ecl-filter-row::-webkit-scrollbar {
-    display: none;
-}
-
+/* ── Filter Pills (compact in toolbar) ── */
 .ecl-filter-pill {
-    padding: 6px 12px;
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 6px;
-    color: #666;
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
+    display: inline-block !important;
+    padding: 5px 10px !important;
+    background: #1a1a1a !important;
+    border: 1px solid #333 !important;
+    border-radius: 6px !important;
+    color: #666 !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.5px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    white-space: nowrap !important;
 }
 
 .ecl-filter-pill.ecl-filter-active {
-    background: #2a2a4a;
-    border-color: #5a5a8a;
-    color: #fff;
+    background: #2a2a4a !important;
+    border-color: #5a5a8a !important;
+    color: #fff !important;
 }
 
 .ecl-filter-pill:hover:not(.ecl-filter-active) {
-    color: #bbb;
-    border-color: #555;
+    color: #bbb !important;
+    border-color: #555 !important;
 }
 
 
-/* ── Log Container ── */
+/* ── Small Action Buttons (icon-only in toolbar) ── */
+.ecl-action-btn.ecl-action-sm {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 7px 10px !important;
+    background: #1e1e1e !important;
+    border: 1px solid #333 !important;
+    border-radius: 6px !important;
+    color: #888 !important;
+    font-size: 14px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+
+.ecl-action-btn.ecl-action-sm:hover {
+    background: #2a2a2a !important;
+    border-color: #555 !important;
+    color: #ddd !important;
+}
+
+.ecl-action-btn.ecl-action-sm:active {
+    transform: scale(0.95) !important;
+}
+
+
+/* ── Log Container (scrollable, newest at top) ── */
 .ecl-log-container {
+    display: block !important;
     flex: 1 1 0% !important;
     overflow-y: auto !important;
-    padding-right: 4px !important;
+    overflow-x: hidden !important;
     scrollbar-width: thin !important;
     scrollbar-color: #444 transparent !important;
     min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
 }
 
 .ecl-log-container::-webkit-scrollbar {
-    width: 4px;
+    width: 4px !important;
 }
 
 .ecl-log-container::-webkit-scrollbar-thumb {
-    background: #444;
-    border-radius: 4px;
+    background: #444 !important;
+    border-radius: 4px !important;
 }
 
 .ecl-log-container::-webkit-scrollbar-track {
-    background: transparent;
+    background: transparent !important;
 }
 
 
 /* ── Empty State ── */
 .ecl-log-empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    gap: 10px;
-    padding: 40px 20px;
-    color: #555;
-    font-size: 14px;
-    text-align: center;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    padding: 40px 20px !important;
+    color: #555 !important;
+    font-size: 14px !important;
+    text-align: center !important;
 }
 
 .ecl-log-empty .fa-solid {
-    font-size: 32px;
-    color: #444;
+    display: inline-block !important;
+    font-size: 32px !important;
+    color: #444 !important;
 }
 
 
 /* ── Individual Log Entry Card ── */
 .ecl-log-entry {
-    background: #1a1a1a;
-    border-radius: 6px;
-    padding: 12px 14px;
-    margin-bottom: 8px;
-    border-left: 3px solid;
-    transition: background 0.15s ease;
-    animation: eclEntryAppear 0.2s ease;
+    display: block !important;
+    background: #1a1a1a !important;
+    border-radius: 6px !important;
+    padding: 10px 12px !important;
+    margin-bottom: 6px !important;
+    border-left: 3px solid !important;
+    border-top: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+    transition: background 0.15s ease !important;
+    animation: eclEntryAppear 0.15s ease forwards !important;
 }
 
 @keyframes eclEntryAppear {
-    from { opacity: 0; transform: translateY(-4px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0 !important; transform: translateY(-4px) !important; }
+    to { opacity: 1 !important; transform: translateY(0) !important; }
 }
 
 .ecl-log-entry:hover {
-    background: #222;
+    background: #222 !important;
 }
 
 /* Level-specific border colors */
-.ecl-log-entry.ecl-level-info    { border-left-color: #4ade80; }
-.ecl-log-entry.ecl-level-debug   { border-left-color: #6b7280; }
-.ecl-log-entry.ecl-level-warn    { border-left-color: #f59e0b; }
-.ecl-log-entry.ecl-level-error   { border-left-color: #ef4444; }
+.ecl-log-entry.ecl-level-info    { border-left-color: #4ade80 !important; }
+.ecl-log-entry.ecl-level-debug   { border-left-color: #6b7280 !important; }
+.ecl-log-entry.ecl-level-warn    { border-left-color: #f59e0b !important; }
+.ecl-log-entry.ecl-level-error   { border-left-color: #ef4444 !important; }
 
 .ecl-log-entry-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    margin-bottom: 4px;
-    flex-wrap: wrap;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    font-size: 12px !important;
+    margin-bottom: 4px !important;
+    flex-wrap: wrap !important;
 }
 
 .ecl-log-timestamp {
-    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-    color: #888;
+    display: inline !important;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
+    color: #888 !important;
 }
 
 .ecl-log-level-badge {
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 6px;
-    border-radius: 4px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
+    display: inline !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    padding: 1px 5px !important;
+    border-radius: 3px !important;
+    letter-spacing: 0.5px !important;
+    text-transform: uppercase !important;
 }
 
-.ecl-log-level-badge.ecl-badge-info    { color: #4ade80; background: rgba(74,222,128,0.1); }
-.ecl-log-level-badge.ecl-badge-debug   { color: #9ca3af; background: rgba(156,163,175,0.08); }
-.ecl-log-level-badge.ecl-badge-warn    { color: #fbbf24; background: rgba(251,191,36,0.1); }
-.ecl-log-level-badge.ecl-badge-error   { color: #ef4444; background: rgba(239,68,68,0.1); }
+.ecl-log-level-badge.ecl-badge-info    { color: #4ade80 !important; background: rgba(74,222,128,0.1) !important; }
+.ecl-log-level-badge.ecl-badge-debug   { color: #9ca3af !important; background: rgba(156,163,175,0.08) !important; }
+.ecl-log-level-badge.ecl-badge-warn    { color: #fbbf24 !important; background: rgba(251,191,36,0.1) !important; }
+.ecl-log-level-badge.ecl-badge-error   { color: #ef4444 !important; background: rgba(239,68,68,0.1) !important; }
 
 .ecl-log-source {
-    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-    color: #666;
-    font-style: italic;
+    display: inline !important;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
+    color: #666 !important;
+    font-style: italic !important;
 }
 
 .ecl-log-message {
-    font-size: 14px;
-    color: #eee;
-    font-weight: 400;
-    line-height: 1.5;
-    word-break: break-word;
+    display: block !important;
+    font-size: 14px !important;
+    color: #eee !important;
+    font-weight: 400 !important;
+    line-height: 1.5 !important;
+    word-break: break-word !important;
 }
 
 .ecl-log-message code,
 .ecl-log-message .ecl-inline-code {
-    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-    background: rgba(255,255,255,0.06);
-    padding: 1px 4px;
-    border-radius: 3px;
-    font-size: 13px;
-    color: #ccc;
+    display: inline !important;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
+    background: rgba(255,255,255,0.06) !important;
+    padding: 1px 4px !important;
+    border-radius: 3px !important;
+    font-size: 13px !important;
+    color: #ccc !important;
 }
 
-/* Warning entries get slightly warmer text */
 .ecl-log-entry.ecl-level-warn .ecl-log-message {
-    color: #fef3c7;
+    color: #fef3c7 !important;
 }
 
-/* Error entries get slightly redder text */
 .ecl-log-entry.ecl-level-error .ecl-log-message {
-    color: #fecaca;
+    color: #fecaca !important;
 }
 
 
-/* ── Auto-scroll Indicator ── */
-.ecl-autoscroll-indicator {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(74, 158, 255, 0.15);
-    border: 1px solid rgba(74, 158, 255, 0.3);
-    border-radius: 20px;
-    padding: 6px 14px;
-    color: #4A9EFF;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.ecl-autoscroll-indicator:hover {
-    background: rgba(74, 158, 255, 0.25);
-}
-
-
-/* ── Toast Notification (for errors/warnings) ── */
+/* ── Toast Notification ── */
 .ecl-toast {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 8px;
-    padding: 12px 16px;
-    color: #fff;
-    font-size: 13px;
-    z-index: 100000;
-    max-width: 280px;
-    animation: eclToastIn 0.3s ease;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    position: fixed !important;
+    bottom: 20px !important;
+    right: 20px !important;
+    background: #1a1a1a !important;
+    border: 1px solid #333 !important;
+    border-radius: 8px !important;
+    padding: 12px 16px !important;
+    color: #fff !important;
+    font-size: 13px !important;
+    z-index: 100000 !important;
+    max-width: 280px !important;
+    animation: eclToastIn 0.3s ease forwards !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important;
 }
 
-.ecl-toast.ecl-toast-error { border-left: 3px solid #ef4444; }
-.ecl-toast.ecl-toast-warn  { border-left: 3px solid #f59e0b; }
+.ecl-toast.ecl-toast-error { border-left: 3px solid #ef4444 !important; }
+.ecl-toast.ecl-toast-warn  { border-left: 3px solid #f59e0b !important; }
 
 @keyframes eclToastIn {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0 !important; transform: translateY(20px) !important; }
+    to { opacity: 1 !important; transform: translateY(0) !important; }
 }
 
 @keyframes eclToastOut {
-    from { opacity: 1; transform: translateY(0); }
-    to { opacity: 0; transform: translateY(20px); }
+    from { opacity: 1 !important; transform: translateY(0) !important; }
+    to { opacity: 0 !important; transform: translateY(20px) !important; }
 }

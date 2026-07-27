@@ -1,6 +1,7 @@
 // ============================================================
-// Easy Console Log — SillyTavern Extension
+// Easy Console Log — SillyTavern Extension (v2)
 // Captures and displays console logs in a premium overlay UI
+// Newest logs appear at TOP — no scroll needed for latest entries
 // ============================================================
 //
 // CRITICAL SAFETY MEASURES:
@@ -30,7 +31,6 @@ let logs = [];
 let originalConsole = {};
 let isConsoleIntercepted = false;
 let isMonitorOpen = false;
-let autoScrollEnabled = true;
 let toastTimeout = null;
 let isInsideAddLog = false; // Anti-recursion guard
 
@@ -52,8 +52,6 @@ jQuery(async () => {
         bindEvents();
 
         // IMPORTANT: Do NOT intercept console during ST initialization!
-        // SillyTavern heavily relies on console during startup.
-        // Intercepting too early breaks the loading flow.
         // We delay interception until ST is fully loaded.
         waitForSillyTavernReady().then(() => {
             if (extension_settings[extensionName].captureBrowserConsole) {
@@ -62,39 +60,23 @@ jQuery(async () => {
         });
 
     } catch (error) {
-        // Use native console.error here — our interception isn't active yet
-        // so this won't cause recursion or hang ST
         if (originalConsole.error) {
             originalConsole.error(`[${extensionName}] Failed to load:`, error);
         } else {
-            // Fallback: just log to browser console natively
             console.error(`[${extensionName}] Failed to load:`, error);
         }
     }
 });
 
 // ── Wait for SillyTavern to finish loading ──
-// ST emits various events when it's done initializing.
-// We wait for the app to be ready before touching console methods.
 function waitForSillyTavernReady() {
     return new Promise((resolve) => {
-        // Strategy 1: Listen for ST's app_ready event
-        const onReady = () => {
-            resolve();
-        };
-
-        // Try event-based detection
+        // Strategy 1: event-based
         if (typeof eventSource !== "undefined" && eventSource.addEventListener) {
-            eventSource.addEventListener("app_ready", onReady, { once: true });
+            eventSource.addEventListener("app_ready", () => resolve(), { once: true });
         }
-
-        // Strategy 2: Also set a timeout as fallback.
-        // Some ST versions may not emit app_ready, or it may fire
-        // before our listener is attached.
-        // 5 seconds is enough for ST to finish its critical init.
-        setTimeout(() => {
-            resolve();
-        }, 5000);
+        // Strategy 2: timeout fallback (5s)
+        setTimeout(resolve, 5000);
     });
 }
 
@@ -108,18 +90,13 @@ function initSettings() {
 
         const settings = extension_settings[extensionName];
 
-        // Apply saved settings to UI — only touch UI elements that exist
         const captureCheckbox = document.getElementById("ecl_capture_checkbox");
-        if (captureCheckbox) {
-            captureCheckbox.checked = settings.captureBrowserConsole;
-        }
+        if (captureCheckbox) captureCheckbox.checked = settings.captureBrowserConsole;
 
-        // Restore source toggle state
         $(".ecl-toggle-btn").removeClass("ecl-toggle-active");
         const activeSourceBtn = $(`.ecl-toggle-btn[data-source="${settings.activeSource}"]`);
         if (activeSourceBtn.length) activeSourceBtn.addClass("ecl-toggle-active");
 
-        // Restore filter state
         $(".ecl-filter-pill").removeClass("ecl-filter-active");
         const activeFilterBtn = $(`.ecl-filter-pill[data-level="${settings.activeFilter}"]`);
         if (activeFilterBtn.length) activeFilterBtn.addClass("ecl-filter-active");
@@ -140,10 +117,8 @@ function saveSetting(key, value) {
 // ── Event Binding ──
 function bindEvents() {
     try {
-        // Open monitor button
+        // Open/close monitor
         $("#easy_console_log_open_btn").on("click", openMonitor);
-
-        // Close monitor
         $("#ecl_close_btn").on("click", closeMonitor);
         $(".ecl-overlay-backdrop").on("click", closeMonitor);
 
@@ -159,24 +134,19 @@ function bindEvents() {
         $("#ecl_capture_checkbox").on("change", function () {
             const checked = $(this).prop("checked");
             saveSetting("captureBrowserConsole", checked);
-            if (checked) {
-                interceptConsole();
-            } else {
-                restoreConsole();
-            }
+            if (checked) interceptConsole();
+            else restoreConsole();
         });
 
-        // Search input
+        // Search input (debounced)
         let searchDebounce = null;
         $("#ecl_search_input").on("input", function () {
             clearTimeout(searchDebounce);
             searchDebounce = setTimeout(() => renderLogs(), 150);
         });
 
-        // Copy visible
+        // Copy / Clear
         $("#ecl_copy_btn").on("click", copyVisibleLogs);
-
-        // Clear logs
         $("#ecl_clear_btn").on("click", clearLogs);
 
         // Level filter pills
@@ -185,12 +155,6 @@ function bindEvents() {
             $(this).addClass("ecl-filter-active");
             saveSetting("activeFilter", $(this).data("level"));
             renderLogs();
-        });
-
-        // Auto-scroll indicator click
-        $("#ecl_autoscroll_indicator").on("click", function () {
-            scrollToBottom();
-            $(this).hide();
         });
     } catch (e) {
         console.error(`[${extensionName}] bindEvents error:`, e);
@@ -203,7 +167,6 @@ function openMonitor() {
     const overlay = document.getElementById("easy-console-log-monitor-overlay");
     if (overlay) overlay.style.display = "flex";
     renderLogs();
-    scrollToBottom();
 }
 
 function closeMonitor() {
@@ -214,11 +177,9 @@ function closeMonitor() {
 
 // ── Console Interception (safe, delayed) ──
 function interceptConsole() {
-    // Prevent double-interception
     if (isConsoleIntercepted) return;
 
     try {
-        // Store originals FIRST — before any replacement
         originalConsole.log   = console.log.bind(console);
         originalConsole.info  = console.info.bind(console);
         originalConsole.warn  = console.warn.bind(console);
@@ -228,74 +189,38 @@ function interceptConsole() {
         const settings = extension_settings[extensionName];
 
         console.log = function (...args) {
-            try {
-                originalConsole.log(...args);
-                if (settings.captureBrowserConsole) {
-                    safeAddLog("info", args, "frontend");
-                }
-            } catch (e) {
-                originalConsole.error(`[${extensionName}] console.log interceptor error:`, e);
-            }
+            try { originalConsole.log(...args); if (settings.captureBrowserConsole) safeAddLog("info", args, "frontend"); }
+            catch (e) { originalConsole.error(`[${extensionName}] console.log interceptor error:`, e); }
         };
 
         console.info = function (...args) {
-            try {
-                originalConsole.info(...args);
-                if (settings.captureBrowserConsole) {
-                    safeAddLog("info", args, "frontend");
-                }
-            } catch (e) {
-                originalConsole.error(`[${extensionName}] console.info interceptor error:`, e);
-            }
+            try { originalConsole.info(...args); if (settings.captureBrowserConsole) safeAddLog("info", args, "frontend"); }
+            catch (e) { originalConsole.error(`[${extensionName}] console.info interceptor error:`, e); }
         };
 
         console.warn = function (...args) {
-            try {
-                originalConsole.warn(...args);
-                if (settings.captureBrowserConsole) {
-                    safeAddLog("warn", args, "frontend");
-                    if (settings.showNotifications) showToast("warn", args);
-                }
-            } catch (e) {
-                originalConsole.error(`[${extensionName}] console.warn interceptor error:`, e);
-            }
+            try { originalConsole.warn(...args); if (settings.captureBrowserConsole) { safeAddLog("warn", args, "frontend"); if (settings.showNotifications) showToast("warn", args); } }
+            catch (e) { originalConsole.error(`[${extensionName}] console.warn interceptor error:`, e); }
         };
 
         console.error = function (...args) {
-            try {
-                originalConsole.error(...args);
-                if (settings.captureBrowserConsole) {
-                    safeAddLog("error", args, "frontend");
-                    if (settings.showNotifications) showToast("error", args);
-                }
-            } catch (e) {
-                // If our error interceptor itself errors, use original directly
-                // Don't try to log this through our system — infinite loop risk
-                originalConsole.error(`[${extensionName}] console.error interceptor error:`, e);
-            }
+            try { originalConsole.error(...args); if (settings.captureBrowserConsole) { safeAddLog("error", args, "frontend"); if (settings.showNotifications) showToast("error", args); } }
+            catch (e) { originalConsole.error(`[${extensionName}] console.error interceptor error:`, e); }
         };
 
         console.debug = function (...args) {
-            try {
-                originalConsole.debug(...args);
-                if (settings.captureBrowserConsole) {
-                    safeAddLog("debug", args, "frontend");
-                }
-            } catch (e) {
-                originalConsole.error(`[${extensionName}] console.debug interceptor error:`, e);
-            }
+            try { originalConsole.debug(...args); if (settings.captureBrowserConsole) safeAddLog("debug", args, "frontend"); }
+            catch (e) { originalConsole.error(`[${extensionName}] console.debug interceptor error:`, e); }
         };
 
         isConsoleIntercepted = true;
     } catch (e) {
-        // If interception setup itself fails, make sure we don't break ST
         console.error(`[${extensionName}] interceptConsole setup error:`, e);
     }
 }
 
 function restoreConsole() {
     if (!isConsoleIntercepted) return;
-
     try {
         if (originalConsole.log)   console.log   = originalConsole.log;
         if (originalConsole.info)  console.info  = originalConsole.info;
@@ -308,62 +233,33 @@ function restoreConsole() {
     }
 }
 
-// ── Safe Log Add (with anti-recursion guard) ──
-// CRITICAL: If addLog itself triggers console calls (e.g., through renderLogs),
-// and console is intercepted, we'd get infinite recursion.
-// The isInsideAddLog flag prevents this.
+// ── Safe Log Add (anti-recursion guard) ──
 function safeAddLog(level, args, source) {
-    if (isInsideAddLog) return; // Anti-recursion: drop nested calls
+    if (isInsideAddLog) return;
     isInsideAddLog = true;
-
-    try {
-        addLog(level, args, source);
-    } catch (e) {
-        originalConsole.error(`[${extensionName}] addLog error:`, e);
-    } finally {
-        isInsideAddLog = false;
-    }
+    try { addLog(level, args, source); }
+    catch (e) { originalConsole.error(`[${extensionName}] addLog error:`, e); }
+    finally { isInsideAddLog = false; }
 }
 
 function addLog(level, args, source) {
     const maxEntries = extension_settings[extensionName]?.maxEntries || defaultSettings.maxEntries;
     const now = new Date();
     const timestamp = now.toLocaleTimeString("en-GB", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
     });
 
     const message = formatArgs(args);
 
-    logs.push({
-        level,
-        message,
-        source: source || "frontend",
-        timestamp,
-    });
+    logs.push({ level, message, source: source || "frontend", timestamp });
 
-    // Trim if over max
     if (logs.length > maxEntries) {
         logs = logs.slice(-maxEntries);
     }
 
-    // Update UI if monitor is open
     if (isMonitorOpen) {
         renderLogs();
         updateStats();
-
-        // Auto-scroll logic
-        const container = document.getElementById("ecl_log_container");
-        if (container) {
-            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
-            if (isNearBottom) {
-                scrollToBottom();
-            } else {
-                const indicator = document.getElementById("ecl_autoscroll_indicator");
-                if (indicator) indicator.style.display = "flex";
-            }
-        }
     } else {
         updateStats();
     }
@@ -374,11 +270,8 @@ function formatArgs(args) {
         if (arg === null) return "null";
         if (arg === undefined) return "undefined";
         if (typeof arg === "object") {
-            try {
-                return JSON.stringify(arg, null, 2);
-            } catch (e) {
-                return String(arg);
-            }
+            try { return JSON.stringify(arg, null, 2); }
+            catch (e) { return String(arg); }
         }
         return String(arg);
     }).join(" ");
@@ -393,9 +286,9 @@ function clearLogs() {
 function copyVisibleLogs() {
     try {
         const visibleEntries = getFilteredLogs();
-        const text = visibleEntries.map(log => {
-            return `[${log.timestamp}] [${log.level.toUpperCase()}] [${log.source}] ${log.message}`;
-        }).join("\n");
+        const text = visibleEntries.map(log =>
+            `[${log.timestamp}] [${log.level.toUpperCase()}] [${log.source}] ${log.message}`
+        ).join("\n");
 
         if (text.length === 0) {
             toastr.info("No logs to copy", "Easy Console Log");
@@ -405,7 +298,6 @@ function copyVisibleLogs() {
         navigator.clipboard.writeText(text).then(() => {
             toastr.success("Logs copied to clipboard", "Easy Console Log");
         }).catch(() => {
-            // Fallback for older browsers / mobile
             const textarea = document.createElement("textarea");
             textarea.value = text;
             textarea.style.position = "fixed";
@@ -422,6 +314,7 @@ function copyVisibleLogs() {
 }
 
 // ── Log Filtering & Rendering ──
+// Newest logs render at TOP — no auto-scroll needed
 function getFilteredLogs() {
     try {
         const settings = extension_settings[extensionName];
@@ -462,11 +355,12 @@ function renderLogs() {
             return;
         }
 
-        // Build HTML for all visible entries
-        const html = filteredLogs.map(log => {
+        // REVERSE: newest log at top, oldest at bottom
+        const reversedLogs = filteredLogs.slice().reverse();
+
+        const html = reversedLogs.map(log => {
             const levelClass = `ecl-level-${log.level}`;
             const badgeClass = `ecl-badge-${log.level}`;
-
             const safeMessage = escapeHtml(log.message)
                 .replace(/`([^`]+)`/g, '<code class="ecl-inline-code">$1</code>');
 
@@ -484,7 +378,6 @@ function renderLogs() {
 
         container.innerHTML = html;
     } catch (e) {
-        // Use originalConsole here to avoid recursion
         if (originalConsole.error) {
             originalConsole.error(`[${extensionName}] renderLogs error:`, e);
         }
@@ -512,24 +405,13 @@ function updateStats() {
         if (warningsEl) warningsEl.textContent = `${warnings} warnings`;
         if (errorsEl) errorsEl.textContent = `${errors} errors`;
     } catch (e) {
-        // Silent fail — stats are non-critical
-    }
-}
-
-// ── Auto-scroll ──
-function scrollToBottom() {
-    const container = document.getElementById("ecl_log_container");
-    if (container) {
-        container.scrollTop = container.scrollHeight;
-        const indicator = document.getElementById("ecl_autoscroll_indicator");
-        if (indicator) indicator.style.display = "none";
+        // Silent — stats are non-critical
     }
 }
 
 // ── Toast Notifications ──
 function showToast(level, args) {
     try {
-        // Remove existing toast
         $(".ecl-toast").remove();
 
         const message = formatArgs(args);
@@ -546,19 +428,17 @@ function showToast(level, args) {
 
         $("body").append(toast);
 
-        // Auto-remove after 4 seconds
         if (toastTimeout) clearTimeout(toastTimeout);
         toastTimeout = setTimeout(() => {
             toast.css("animation", "eclToastOut 0.3s ease forwards");
             setTimeout(() => toast.remove(), 300);
         }, 4000);
 
-        // Click to dismiss
         toast.on("click", () => {
             toast.css("animation", "eclToastOut 0.3s ease forwards");
             setTimeout(() => toast.remove(), 300);
         });
     } catch (e) {
-        // Toasts are non-critical, silent fail
+        // Non-critical, silent
     }
 }
