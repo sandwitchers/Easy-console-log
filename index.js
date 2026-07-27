@@ -231,7 +231,7 @@ function interceptConsole() {
             try {
                 originalConsole.log(...args);
                 if (settings.captureBrowserConsole) {
-                    safeAddLog("info", args, "browser");
+                    safeAddLog("info", args, "frontend");
                 }
             } catch (e) {
                 originalConsole.error(`[${extensionName}] console.log interceptor error:`, e);
@@ -242,7 +242,7 @@ function interceptConsole() {
             try {
                 originalConsole.info(...args);
                 if (settings.captureBrowserConsole) {
-                    safeAddLog("info", args, "browser");
+                    safeAddLog("info", args, "frontend");
                 }
             } catch (e) {
                 originalConsole.error(`[${extensionName}] console.info interceptor error:`, e);
@@ -253,7 +253,7 @@ function interceptConsole() {
             try {
                 originalConsole.warn(...args);
                 if (settings.captureBrowserConsole) {
-                    safeAddLog("warn", args, "browser");
+                    safeAddLog("warn", args, "frontend");
                     if (settings.showNotifications) showToast("warn", args);
                 }
             } catch (e) {
@@ -265,7 +265,7 @@ function interceptConsole() {
             try {
                 originalConsole.error(...args);
                 if (settings.captureBrowserConsole) {
-                    safeAddLog("error", args, "browser");
+                    safeAddLog("error", args, "frontend");
                     if (settings.showNotifications) showToast("error", args);
                 }
             } catch (e) {
@@ -279,7 +279,7 @@ function interceptConsole() {
             try {
                 originalConsole.debug(...args);
                 if (settings.captureBrowserConsole) {
-                    safeAddLog("debug", args, "browser");
+                    safeAddLog("debug", args, "frontend");
                 }
             } catch (e) {
                 originalConsole.error(`[${extensionName}] console.debug interceptor error:`, e);

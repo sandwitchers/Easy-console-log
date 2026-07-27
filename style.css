@@ -85,17 +85,19 @@
 
 /* ── Monitor Panel ── */
 .ecl-monitor-panel {
-    position: relative;
-    width: 95vw;
-    max-width: 480px;
-    max-height: 88vh;
-    background: #121212;
-    border: 1px solid #2a2a2a;
-    border-radius: 16px;
-    padding: 16px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+    position: relative !important;
+    width: 95vw !important;
+    max-width: 480px !important;
+    max-height: 88vh !important;
+    height: 88vh !important;
+    background: #121212 !important;
+    border: 1px solid #2a2a2a !important;
+    border-radius: 16px !important;
+    padding: 16px !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    box-sizing: border-box !important;
     box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(74, 158, 255, 0.1);
     animation: eclSlideUp 0.3s ease;
 }
@@ -108,10 +110,12 @@
 
 /* ── Header ── */
 .ecl-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 12px;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    margin-bottom: 12px !important;
+    flex-shrink: 0 !important;
+    min-height: 0 !important;
 }
 
 .ecl-header-left {
@@ -156,7 +160,8 @@
 
 /* ── Source Toggle ── */
 .ecl-source-toggle {
-    margin-bottom: 12px;
+    margin-bottom: 12px !important;
+    flex-shrink: 0 !important;
 }
 
 .ecl-toggle-group {
@@ -193,9 +198,10 @@
 
 /* ── Stats Bar ── */
 .ecl-stats-bar {
-    font-size: 12px;
-    color: #777;
-    margin-bottom: 12px;
+    font-size: 12px !important;
+    color: #777 !important;
+    margin-bottom: 12px !important;
+    flex-shrink: 0 !important;
 }
 
 .ecl-stat-warn {
@@ -209,13 +215,14 @@
 
 /* ── Search ── */
 .ecl-search-wrap {
-    display: flex;
-    align-items: center;
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 8px;
-    padding: 2px 12px;
-    margin-bottom: 10px;
+    display: flex !important;
+    align-items: center !important;
+    background: #1a1a1a !important;
+    border: 1px solid #333 !important;
+    border-radius: 8px !important;
+    padding: 2px 12px !important;
+    margin-bottom: 10px !important;
+    flex-shrink: 0 !important;
     transition: border-color 0.2s ease;
 }
 
@@ -247,7 +254,8 @@
 
 /* ── Capture Checkbox ── */
 .ecl-capture-row {
-    margin-bottom: 10px;
+    margin-bottom: 10px !important;
+    flex-shrink: 0 !important;
 }
 
 .ecl-checkbox-label {
@@ -304,9 +312,10 @@
 
 /* ── Action Buttons ── */
 .ecl-action-row {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 10px;
+    display: flex !important;
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+    flex-shrink: 0 !important;
 }
 
 .ecl-action-btn {
@@ -339,11 +348,12 @@
 
 /* ── Level Filter Pills ── */
 .ecl-filter-row {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 10px;
-    overflow-x: auto;
-    scrollbar-width: none;
+    display: flex !important;
+    gap: 6px !important;
+    margin-bottom: 10px !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+    flex-shrink: 0 !important;
 }
 
 .ecl-filter-row::-webkit-scrollbar {
@@ -378,12 +388,12 @@
 
 /* ── Log Container ── */
 .ecl-log-container {
-    flex: 1;
-    overflow-y: auto;
-    padding-right: 4px;
-    scrollbar-width: thin;
-    scrollbar-color: #444 transparent;
-    min-height: 0;
+    flex: 1 1 0% !important;
+    overflow-y: auto !important;
+    padding-right: 4px !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: #444 transparent !important;
+    min-height: 0 !important;
 }
 
 .ecl-log-container::-webkit-scrollbar {
