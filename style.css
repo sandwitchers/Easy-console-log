@@ -551,8 +551,27 @@
 
 #easy-console-log-monitor-overlay .ecl-log-source {
     font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
-    color: #555 !important;
     font-style: italic !important;
+    font-size: 11px !important;
+}
+
+/* Frontend source tag — blue accent */
+#easy-console-log-monitor-overlay .ecl-log-entry.ecl-source-frontend .ecl-log-source {
+    color: #4A9EFF !important;
+}
+
+/* Backend source tag — purple accent to visually differentiate */
+#easy-console-log-monitor-overlay .ecl-log-entry.ecl-source-backend .ecl-log-source {
+    color: #a78bfa !important;
+}
+
+/* Backend log entries — slightly different background tint */
+#easy-console-log-monitor-overlay .ecl-log-entry.ecl-source-backend {
+    background: rgba(167, 139, 250, 0.04) !important;
+}
+
+#easy-console-log-monitor-overlay .ecl-log-entry.ecl-source-backend:hover {
+    background: rgba(167, 139, 250, 0.08) !important;
 }
 
 #easy-console-log-monitor-overlay .ecl-log-message {

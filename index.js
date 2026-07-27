@@ -1,16 +1,22 @@
 // ============================================================
-// Easy Console Log — SillyTavern Extension (v3)
-// Captures and displays console logs in a premium overlay UI
-// Newest logs appear at TOP — no scroll needed for latest entries
+// Easy Console Log — SillyTavern Extension (v5)
+// ============================================================
+// NEW IN v5:
+// - BACKEND LOG CAPTURE: eventSource (SSE) monitoring,
+//   global JS errors, network status changes — tagged "backend"
+// - PERFORMANCE OVERHAUL: batched debounced rendering,
+//   incremental prepend for new logs, max DOM entries limit
+//   prevents freeze when rapid logs arrive or monitor is opened
 //
 // CRITICAL SAFETY MEASURES:
 // 1. Only import what we ACTUALLY USE — unused imports crash ST
-// 2. Console interception is DELAYED until ST finishes loading
-// 3. Every operation is wrapped in try/catch to prevent ST hangs
-// 4. addLog is protected against recursive loops during interception
-// 5. Overlay visibility uses CLASS TOGGLE (.ecl-hidden), not inline
-//    style — prevents CSS specificity wars with ST global CSS
-// 6. Toggle buttons are defensively re-ensured visible after render
+// 2. Console interception DELAYED until ST finishes loading
+// 3. Every operation wrapped in try/catch to prevent ST hangs
+// 4. Anti-recursion guard on addLog
+// 5. Overlay visibility uses CLASS TOGGLE (.ecl-hidden)
+// 6. Toggle buttons defensively re-ensured visible after render
+// 7. Backend capture is SAFE — only monitors, never intercepts
+//    fetch/XHR which would break ST's API functionality
 // ============================================================
 
 import { extension_settings } from "../../../extensions.js";
@@ -19,10 +25,15 @@ import { saveSettingsDebounced } from "../../../../script.js";
 const extensionName = "Easy-console-log";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 
+// ── Constants ──
+const MAX_RENDERED_ENTRIES = 100; // Only render last 100 entries in DOM
+const RENDER_DEBOUNCE_MS = 200;   // Batch rapid log arrivals into 1 render
+
 // ── State ──
 const defaultSettings = {
     enabled: true,
     captureBrowserConsole: true,
+    captureBackendEvents: true,
     showNotifications: true,
     maxEntries: 200,
     activeSource: "frontend",
@@ -32,33 +43,30 @@ const defaultSettings = {
 let logs = [];
 let originalConsole = {};
 let isConsoleIntercepted = false;
+let isBackendIntercepted = false;
 let isMonitorOpen = false;
 let toastTimeout = null;
-let isInsideAddLog = false; // Anti-recursion guard
+let isInsideAddLog = false;
+let renderDebounceTimer = null;
+let pendingRenderType = "none"; // "full" | "incremental"
+let lastRenderedLogIndex = -1;  // Track which logs have been rendered
 
-// ── Initialize (safe, non-blocking) ──
+// ── Initialize ──
 jQuery(async () => {
     try {
-        // Load settings HTML (gear icon drawer) — append to right panel
         const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
         $("#extensions_settings2").append(settingsHtml);
 
-        // Load monitor HTML (overlay) — append to body
         const monitorHtml = await $.get(`${extensionFolderPath}/monitor.html`);
         $("body").append(monitorHtml);
 
-        // Initialize settings storage
         initSettings();
-
-        // Bind UI events (safe, no side effects)
         bindEvents();
 
-        // IMPORTANT: Do NOT intercept console during ST initialization!
-        // We delay interception until ST is fully loaded.
         waitForSillyTavernReady().then(() => {
-            if (extension_settings[extensionName].captureBrowserConsole) {
-                interceptConsole();
-            }
+            const settings = extension_settings[extensionName];
+            if (settings.captureBrowserConsole) interceptConsole();
+            if (settings.captureBackendEvents) interceptBackend();
         });
 
     } catch (error) {
@@ -71,40 +79,28 @@ jQuery(async () => {
 });
 
 // ── Wait for SillyTavern to finish loading ──
-// FIXED: Only resolve on "app_ready" event, not on any eventSource message.
-// The previous version resolved on ANY message, which could fire too early.
-// Also increased timeout fallback to 8s for safety on slow mobile devices.
 function waitForSillyTavernReady() {
     return new Promise((resolve) => {
         let resolved = false;
-
         const doResolve = () => {
             if (resolved) return;
             resolved = true;
             resolve();
         };
 
-        // Strategy 1: Wait specifically for "app_ready" event
-        // Only this event means ST is fully initialized and safe to intercept
         if (typeof eventSource !== "undefined" && eventSource.addEventListener) {
             eventSource.addEventListener("app_ready", doResolve, { once: true });
         }
 
-        // Strategy 2: Also check for ST's global getContext availability
-        // as a secondary signal that ST init is complete
         const checkInterval = setInterval(() => {
             try {
-                // If getContext exists and ST core is loaded, we're ready
                 if (typeof getContext === "function" || resolved) {
                     clearInterval(checkInterval);
                     doResolve();
                 }
-            } catch (e) {
-                // getContext might not be defined yet, that's fine
-            }
+            } catch (e) { /* not ready yet */ }
         }, 500);
 
-        // Strategy 3: Timeout fallback (8s — longer for slow mobile devices)
         setTimeout(() => {
             clearInterval(checkInterval);
             doResolve();
@@ -112,7 +108,7 @@ function waitForSillyTavernReady() {
     });
 }
 
-// ── Settings Management ──
+// ── Settings ──
 function initSettings() {
     try {
         extension_settings[extensionName] = extension_settings[extensionName] || {};
@@ -125,13 +121,11 @@ function initSettings() {
         const captureCheckbox = document.getElementById("ecl_capture_checkbox");
         if (captureCheckbox) captureCheckbox.checked = settings.captureBrowserConsole;
 
-        // Set active source toggle — defensive: ensure buttons exist first
         const toggleButtons = document.querySelectorAll(".ecl-toggle-btn");
         toggleButtons.forEach(btn => btn.classList.remove("ecl-toggle-active"));
         const activeSourceBtn = document.querySelector(`.ecl-toggle-btn[data-source="${settings.activeSource}"]`);
         if (activeSourceBtn) activeSourceBtn.classList.add("ecl-toggle-active");
 
-        // Set active filter pill — defensive
         const filterPills = document.querySelectorAll(".ecl-filter-pill");
         filterPills.forEach(pill => pill.classList.remove("ecl-filter-active"));
         const activeFilterBtn = document.querySelector(`.ecl-filter-pill[data-level="${settings.activeFilter}"]`);
@@ -153,21 +147,18 @@ function saveSetting(key, value) {
 // ── Event Binding ──
 function bindEvents() {
     try {
-        // Open/close monitor — use class toggle for visibility
         $("#easy_console_log_open_btn").on("click", openMonitor);
         $("#ecl_close_btn").on("click", closeMonitor);
         $(".ecl-overlay-backdrop").on("click", closeMonitor);
 
-        // Source toggle — defensive: always ensure buttons stay visible
         $(".ecl-toggle-btn").on("click", function () {
             $(".ecl-toggle-btn").removeClass("ecl-toggle-active");
             $(this).addClass("ecl-toggle-active");
             saveSetting("activeSource", $(this).data("source"));
             ensureToggleVisible();
-            renderLogs();
+            scheduleFullRender();
         });
 
-        // Capture checkbox
         $("#ecl_capture_checkbox").on("change", function () {
             const checked = $(this).prop("checked");
             saveSetting("captureBrowserConsole", checked);
@@ -175,27 +166,24 @@ function bindEvents() {
             else restoreConsole();
         });
 
-        // Search input (debounced)
         let searchDebounce = null;
         $("#ecl_search_input").on("input", function () {
             clearTimeout(searchDebounce);
             searchDebounce = setTimeout(() => {
                 ensureToggleVisible();
-                renderLogs();
+                scheduleFullRender();
             }, 150);
         });
 
-        // Copy / Clear
         $("#ecl_copy_btn").on("click", copyVisibleLogs);
         $("#ecl_clear_btn").on("click", clearLogs);
 
-        // Level filter pills
         $(".ecl-filter-pill").on("click", function () {
             $(".ecl-filter-pill").removeClass("ecl-filter-active");
             $(this).addClass("ecl-filter-active");
             saveSetting("activeFilter", $(this).data("level"));
             ensureToggleVisible();
-            renderLogs();
+            scheduleFullRender();
         });
     } catch (e) {
         console.error(`[${extensionName}] bindEvents error:`, e);
@@ -203,20 +191,17 @@ function bindEvents() {
 }
 
 // ── Monitor Open / Close ──
-// CHANGED: Use class toggle (.ecl-hidden) instead of inline style.display.
-// This prevents CSS specificity wars where ST's global CSS overrides
-// our inline style changes. The .ecl-hidden class uses display:none !important
-// which has ID-based specificity and is nearly impossible to override.
 function openMonitor() {
     isMonitorOpen = true;
     const overlay = document.getElementById("easy-console-log-monitor-overlay");
     if (overlay) {
         overlay.classList.remove("ecl-hidden");
-        // Remove any leftover inline style display that might conflict
         overlay.style.removeProperty("display");
     }
     ensureToggleVisible();
-    renderLogs();
+    // Full render on open — reset rendered index
+    lastRenderedLogIndex = -1;
+    scheduleFullRender();
 }
 
 function closeMonitor() {
@@ -224,59 +209,44 @@ function closeMonitor() {
     const overlay = document.getElementById("easy-console-log-monitor-overlay");
     if (overlay) {
         overlay.classList.add("ecl-hidden");
-        // Remove any leftover inline style display that might conflict
         overlay.style.removeProperty("display");
     }
 }
 
-// ── Defensive: Ensure Toggle Buttons Stay Visible ──
-// This is a safety net against ST's CSS potentially hiding toggle buttons.
-// Called after every render and state change to guarantee toggles are visible.
+// ── Defensive Toggle Visibility ──
 function ensureToggleVisible() {
     try {
         const overlay = document.getElementById("easy-console-log-monitor-overlay");
-        if (!overlay) return;
+        if (!overlay || overlay.classList.contains("ecl-hidden")) return;
 
-        // If overlay is hidden, no need to fix visibility
-        if (overlay.classList.contains("ecl-hidden")) return;
+        const elems = [
+            overlay.querySelector(".ecl-meta-row"),
+            overlay.querySelector(".ecl-toggle-group"),
+        ];
+        elems.forEach(el => {
+            if (el) {
+                el.style.removeProperty("display");
+                el.style.removeProperty("visibility");
+                el.style.removeProperty("opacity");
+                el.style.removeProperty("height");
+                el.style.removeProperty("min-height");
+                el.style.removeProperty("max-height");
+            }
+        });
 
-        // Force toggle group and buttons to be visible
-        const toggleGroup = overlay.querySelector(".ecl-toggle-group");
-        if (toggleGroup) {
-            toggleGroup.style.removeProperty("display");
-            toggleGroup.style.removeProperty("visibility");
-            toggleGroup.style.removeProperty("opacity");
-            toggleGroup.style.removeProperty("height");
-            toggleGroup.style.removeProperty("min-height");
-            toggleGroup.style.removeProperty("max-height");
-        }
-
-        const toggleButtons = overlay.querySelectorAll(".ecl-toggle-btn");
-        toggleButtons.forEach(btn => {
+        overlay.querySelectorAll(".ecl-toggle-btn").forEach(btn => {
             btn.style.removeProperty("display");
             btn.style.removeProperty("visibility");
             btn.style.removeProperty("opacity");
         });
-
-        // Also ensure the meta-row container is visible
-        const metaRow = overlay.querySelector(".ecl-meta-row");
-        if (metaRow) {
-            metaRow.style.removeProperty("display");
-            metaRow.style.removeProperty("visibility");
-            metaRow.style.removeProperty("opacity");
-            metaRow.style.removeProperty("height");
-            metaRow.style.removeProperty("min-height");
-            metaRow.style.removeProperty("max-height");
-        }
-    } catch (e) {
-        // Non-critical, silent
-    }
+    } catch (e) { /* non-critical */ }
 }
 
-// ── Console Interception (safe, delayed) ──
+// ============================================================
+// FRONTEND: Console Interception
+// ============================================================
 function interceptConsole() {
     if (isConsoleIntercepted) return;
-
     try {
         originalConsole.log   = console.log.bind(console);
         originalConsole.info  = console.info.bind(console);
@@ -323,20 +293,118 @@ function restoreConsole() {
         if (originalConsole.log)   console.log   = originalConsole.log;
         if (originalConsole.info)  console.info  = originalConsole.info;
         if (originalConsole.warn)  console.warn  = originalConsole.warn;
-        if (originalConsole.error) console.error = originalConsole.error;
-        if (originalConsole.debug) console.debug = originalConsole.debug;
+        if (originalConsole.error) console.error  = originalConsole.error;
+        if (originalConsole.debug) console.debug  = originalConsole.debug;
         isConsoleIntercepted = false;
     } catch (e) {
         console.error(`[${extensionName}] restoreConsole error:`, e);
     }
 }
 
-// ── Safe Log Add (anti-recursion guard) ──
+// ============================================================
+// BACKEND: SSE + Global Errors + Network Events
+// ============================================================
+// Strategy: ONLY monitor/observe — NEVER intercept fetch or XHR
+// which would break ST's API calls. We passively capture:
+// 1. eventSource (SSE) connection state changes
+// 2. Key SSE events (app_ready, generation events, etc.)
+// 3. window.onerror — uncaught JS errors (often from failed API calls)
+// 4. window.onunhandledrejection — unhandled Promise rejections
+// 5. navigator online/offline events — network connectivity changes
+function interceptBackend() {
+    if (isBackendIntercepted) return;
+    try {
+        // 1. SSE Connection Monitoring
+        if (typeof eventSource !== "undefined" && eventSource.readyState !== undefined) {
+            // Monitor connection state changes
+            eventSource.addEventListener("open", () => {
+                safeAddLog("info", ["[SSE] Connection established to backend server"], "backend");
+            });
+
+            eventSource.addEventListener("error", () => {
+                const state = eventSource.readyState;
+                const stateDesc = state === 0 ? "CONNECTING" : state === 1 ? "OPEN" : state === 2 ? "CLOSED" : "UNKNOWN";
+                safeAddLog("error", [`[SSE] Connection error — readyState: ${stateDesc} (${state})`], "backend");
+            });
+
+            // Monitor key backend events
+            const backendEvents = [
+                "app_ready",
+                "message_generation_started",
+                "message_generation_finished",
+                "message_generation_aborted",
+                "message_generation_error",
+                "character_loaded",
+                "chat_loaded",
+                "group_loaded",
+            ];
+
+            backendEvents.forEach(eventName => {
+                eventSource.addEventListener(eventName, (e) => {
+                    let detail = "";
+                    try {
+                        if (e.data) detail = ` — data: ${e.data.substring(0, 100)}`;
+                    } catch (ex) { /* no data */ }
+                    safeAddLog("info", [`[SSE] Event: ${eventName}${detail}`], "backend");
+                });
+            });
+        }
+
+        // 2. Global Uncaught Errors
+        window.addEventListener("error", (e) => {
+            const msg = e.message || "Unknown error";
+            const src = e.filename || "unknown";
+            const line = e.lineno || "?";
+            const col = e.colno || "?";
+            safeAddLog("error", [`[Uncaught] ${msg} at ${src}:${line}:${col}`], "backend");
+        });
+
+        // 3. Unhandled Promise Rejections
+        window.addEventListener("unhandledrejection", (e) => {
+            const reason = e.reason;
+            let msg = "Unhandled Promise rejection";
+            if (reason instanceof Error) {
+                msg = `${reason.message} at ${reason.stack?.split("\n")[0] || "unknown"}`;
+            } else if (typeof reason === "string") {
+                msg = reason;
+            } else {
+                try { msg = JSON.stringify(reason).substring(0, 100); }
+                catch (ex) { msg = String(reason).substring(0, 100); }
+            }
+            safeAddLog("error", [`[Promise] ${msg}`], "backend");
+        });
+
+        // 4. Network Connectivity Changes
+        window.addEventListener("offline", () => {
+            safeAddLog("warn", ["[Network] Device went OFFLINE — backend unreachable"], "backend");
+        });
+
+        window.addEventListener("online", () => {
+            safeAddLog("info", ["[Network] Device back ONLINE — reconnecting to backend"], "backend");
+        });
+
+        // Log initial state
+        const esState = typeof eventSource !== "undefined" ?
+            (eventSource.readyState === 1 ? "OPEN" : eventSource.readyState === 0 ? "CONNECTING" : "CLOSED") :
+            "NOT_AVAILABLE";
+        const isOnline = navigator.onLine ? "ONLINE" : "OFFLINE";
+
+        safeAddLog("info", [`[Backend Monitor] Started — SSE: ${esState}, Network: ${isOnline}`], "backend");
+
+        isBackendIntercepted = true;
+    } catch (e) {
+        console.error(`[${extensionName}] interceptBackend setup error:`, e);
+    }
+}
+
+// ============================================================
+// LOG ADD + ANTI-RECURSION
+// ============================================================
 function safeAddLog(level, args, source) {
     if (isInsideAddLog) return;
     isInsideAddLog = true;
     try { addLog(level, args, source); }
-    catch (e) { originalConsole.error(`[${extensionName}] addLog error:`, e); }
+    catch (e) { originalConsole.error?.(`[${extensionName}] addLog error:`, e); }
     finally { isInsideAddLog = false; }
 }
 
@@ -348,18 +416,22 @@ function addLog(level, args, source) {
     });
 
     const message = formatArgs(args);
+    const logEntry = { level, message, source: source || "frontend", timestamp };
 
-    logs.push({ level, message, source: source || "frontend", timestamp });
+    logs.push(logEntry);
 
     if (logs.length > maxEntries) {
         logs = logs.slice(-maxEntries);
+        // Reset rendered index since array was trimmed
+        lastRenderedLogIndex = -1;
     }
 
+    updateStats();
+
     if (isMonitorOpen) {
-        renderLogs();
-        updateStats();
-    } else {
-        updateStats();
+        // PERFORMANCE: Instead of immediate render, schedule batched render.
+        // If new logs arrive rapidly, they're batched into one update.
+        scheduleIncrementalRender();
     }
 }
 
@@ -368,17 +440,190 @@ function formatArgs(args) {
         if (arg === null) return "null";
         if (arg === undefined) return "undefined";
         if (typeof arg === "object") {
-            try { return JSON.stringify(arg, null, 2); }
-            catch (e) { return String(arg); }
+            try {
+                const str = JSON.stringify(arg);
+                // Truncate very long objects to prevent DOM bloat
+                return str.length > 500 ? str.substring(0, 500) + "... [truncated]" : str;
+            } catch (e) { return String(arg).substring(0, 200); }
         }
-        return String(arg);
+        const str = String(arg);
+        return str.length > 500 ? str.substring(0, 500) + "... [truncated]" : str;
     }).join(" ");
+}
+
+// ============================================================
+// PERFORMANCE: Batched + Incremental Rendering
+// ============================================================
+// Instead of rebuilding ALL DOM entries every time a log arrives,
+// we use two render strategies:
+// 1. INCREMENTAL: When a new log arrives while monitor is open,
+//    prepend only the new entry at the top. Much cheaper than
+//    rebuilding all entries.
+// 2. FULL: When filter/source/search changes, rebuild everything.
+//    Also used on first open and after clear.
+//
+// Both are debounced — rapid log bursts are batched into 1 render.
+
+function scheduleIncrementalRender() {
+    pendingRenderType = "incremental";
+    clearTimeout(renderDebounceTimer);
+    renderDebounceTimer = setTimeout(() => {
+        requestAnimationFrame(() => {
+            if (pendingRenderType === "incremental") {
+                doIncrementalRender();
+            } else if (pendingRenderType === "full") {
+                doFullRender();
+            }
+            pendingRenderType = "none";
+        });
+    }, RENDER_DEBOUNCE_MS);
+}
+
+function scheduleFullRender() {
+    pendingRenderType = "full";
+    clearTimeout(renderDebounceTimer);
+    renderDebounceTimer = setTimeout(() => {
+        requestAnimationFrame(() => {
+            doFullRender();
+            pendingRenderType = "none";
+        });
+    }, RENDER_DEBOUNCE_MS);
+}
+
+// ── Incremental Render ──
+// Prepends new log entries at the top of the container.
+// Only processes logs that haven't been rendered yet.
+function doIncrementalRender() {
+    try {
+        const container = document.getElementById("ecl_log_container");
+        if (!container) return;
+
+        const settings = extension_settings[extensionName];
+        const activeSource = settings?.activeSource || "frontend";
+        const activeFilter = settings?.activeFilter || "ALL";
+        const searchInput = document.getElementById("ecl_search_input");
+        const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : "";
+
+        // Find new logs since last render
+        const startIndex = lastRenderedLogIndex + 1;
+        const newLogs = logs.slice(startIndex);
+        lastRenderedLogIndex = logs.length - 1;
+
+        if (newLogs.length === 0) return;
+
+        // Filter new logs matching current view
+        const matchingNewLogs = newLogs.filter(log => {
+            if (log.source !== activeSource) return false;
+            if (activeFilter !== "ALL" && log.level !== activeFilter.toLowerCase()) return false;
+            if (searchTerm && !log.message.toLowerCase().includes(searchTerm)) return false;
+            return true;
+        });
+
+        // Remove empty state message if present
+        const emptyEl = container.querySelector(".ecl-log-empty");
+        if (emptyEl) emptyEl.remove();
+
+        // Prepend matching new logs at the top (newest first)
+        // We iterate in reverse order so the latest log ends up at top
+        for (let i = matchingNewLogs.length - 1; i >= 0; i--) {
+            const log = matchingNewLogs[i];
+            const entryEl = createLogEntryElement(log);
+            container.prepend(entryEl);
+        }
+
+        // Trim DOM entries that exceed max rendered limit
+        trimDomEntries(container);
+
+        ensureToggleVisible();
+    } catch (e) {
+        originalConsole.error?.(`[${extensionName}] incremental render error:`, e);
+    }
+}
+
+// ── Full Render ──
+// Rebuilds all log entries. Used on open, filter change, source change, search.
+function doFullRender() {
+    try {
+        const container = document.getElementById("ecl_log_container");
+        if (!container) return;
+
+        const filteredLogs = getFilteredLogs();
+
+        if (filteredLogs.length === 0) {
+            const emptyMsg = logs.length === 0
+                ? "No logs captured yet. Logs will appear here in real-time."
+                : "No logs match your current filter.";
+            container.innerHTML = `
+                <div class="ecl-log-empty">
+                    <span class="fa-solid fa-terminal"></span>
+                    <span>${emptyMsg}</span>
+                </div>
+            `;
+            lastRenderedLogIndex = logs.length - 1;
+            ensureToggleVisible();
+            return;
+        }
+
+        // REVERSE: newest at top, oldest at bottom
+        // Only render last MAX_RENDERED_ENTRIES to prevent DOM bloat
+        const displayLogs = filteredLogs.slice(-MAX_RENDERED_ENTRIES).reverse();
+
+        // Build HTML efficiently using DocumentFragment
+        const fragment = document.createDocumentFragment();
+        displayLogs.forEach(log => {
+            fragment.appendChild(createLogEntryElement(log));
+        });
+
+        container.innerHTML = "";
+        container.appendChild(fragment);
+
+        lastRenderedLogIndex = logs.length - 1;
+        ensureToggleVisible();
+    } catch (e) {
+        originalConsole.error?.(`[${extensionName}] full render error:`, e);
+    }
+}
+
+// ── Create Single Log Entry Element ──
+// Reusable for both incremental and full render.
+function createLogEntryElement(log) {
+    const entry = document.createElement("div");
+    entry.className = `ecl-log-entry ecl-level-${log.level} ecl-source-${log.source}`;
+
+    const levelClass = `ecl-badge-${log.level}`;
+    const safeMessage = escapeHtml(log.message)
+        .replace(/`([^`]+)`/g, '<code class="ecl-inline-code">$1</code>');
+
+    entry.innerHTML = `
+        <div class="ecl-log-entry-meta">
+            <span class="ecl-log-timestamp">${log.timestamp}</span>
+            <span class="ecl-log-level-badge ${levelClass}">${log.level.toUpperCase()}</span>
+            <span class="ecl-log-source">${log.source}</span>
+        </div>
+        <div class="ecl-log-message">${safeMessage}</div>
+    `;
+
+    return entry;
+}
+
+// ── Trim DOM entries to max limit ──
+// Removes oldest entries (at bottom of container) when count exceeds limit
+function trimDomEntries(container) {
+    const entries = container.querySelectorAll(".ecl-log-entry");
+    if (entries.length > MAX_RENDERED_ENTRIES) {
+        // Remove from bottom (oldest entries)
+        const excess = entries.length - MAX_RENDERED_ENTRIES;
+        for (let i = entries.length - 1; i >= entries.length - excess; i--) {
+            entries[i].remove();
+        }
+    }
 }
 
 function clearLogs() {
     logs = [];
+    lastRenderedLogIndex = -1;
     ensureToggleVisible();
-    renderLogs();
+    scheduleFullRender();
     updateStats();
 }
 
@@ -412,8 +657,7 @@ function copyVisibleLogs() {
     }
 }
 
-// ── Log Filtering & Rendering ──
-// Newest logs render at TOP — no auto-scroll needed
+// ── Log Filtering ──
 function getFilteredLogs() {
     try {
         const settings = extension_settings[extensionName];
@@ -434,70 +678,6 @@ function getFilteredLogs() {
     }
 }
 
-function renderLogs() {
-    try {
-        const container = document.getElementById("ecl_log_container");
-        if (!container) return;
-
-        const filteredLogs = getFilteredLogs();
-
-        if (filteredLogs.length === 0) {
-            const emptyMsg = logs.length === 0
-                ? "No logs captured yet. Logs will appear here in real-time."
-                : "No logs match your current filter.";
-            container.innerHTML = `
-                <div class="ecl-log-empty">
-                    <span class="fa-solid fa-terminal"></span>
-                    <span>${emptyMsg}</span>
-                </div>
-            `;
-            // After rendering empty state, ensure toggle is still visible
-            ensureToggleVisible();
-            return;
-        }
-
-        // REVERSE: newest log at top, oldest at bottom
-        const reversedLogs = filteredLogs.slice().reverse();
-
-        const html = reversedLogs.map(log => {
-            const levelClass = `ecl-level-${log.level}`;
-            const badgeClass = `ecl-badge-${log.level}`;
-            const safeMessage = escapeHtml(log.message)
-                .replace(/`([^`]+)`/g, '<code class="ecl-inline-code">$1</code>');
-
-            return `
-                <div class="ecl-log-entry ${levelClass}">
-                    <div class="ecl-log-entry-meta">
-                        <span class="ecl-log-timestamp">${log.timestamp}</span>
-                        <span class="ecl-log-level-badge ${badgeClass}">${log.level.toUpperCase()}</span>
-                        <span class="ecl-log-source">${log.source}</span>
-                    </div>
-                    <div class="ecl-log-message">${safeMessage}</div>
-                </div>
-            `;
-        }).join("");
-
-        container.innerHTML = html;
-
-        // CRITICAL FIX: After rendering log entries, defensively ensure
-        // toggle buttons are still visible. This prevents the bug where
-        // toggles disappear after logs appear — ST's CSS may apply
-        // display:none/visibility:hidden/opacity:0 on our elements
-        // via mutation observers or dynamic style changes.
-        ensureToggleVisible();
-    } catch (e) {
-        if (originalConsole.error) {
-            originalConsole.error(`[${extensionName}] renderLogs error:`, e);
-        }
-    }
-}
-
-function escapeHtml(text) {
-    const div = document.createElement("div");
-    div.textContent = text;
-    return div.innerHTML;
-}
-
 // ── Stats ──
 function updateStats() {
     try {
@@ -512,9 +692,14 @@ function updateStats() {
         if (entriesEl) entriesEl.textContent = `${entries} entries`;
         if (warningsEl) warningsEl.textContent = `${warnings} warnings`;
         if (errorsEl) errorsEl.textContent = `${errors} errors`;
-    } catch (e) {
-        // Silent — stats are non-critical
-    }
+    } catch (e) { /* non-critical */ }
+}
+
+// ── HTML Escape ──
+function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // ── Toast Notifications ──
@@ -546,7 +731,5 @@ function showToast(level, args) {
             toast.css("animation", "eclToastOut 0.3s ease forwards");
             setTimeout(() => toast.remove(), 300);
         });
-    } catch (e) {
-        // Non-critical, silent
-    }
+    } catch (e) { /* non-critical */ }
 }
