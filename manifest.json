@@ -1,0 +1,11 @@
+{
+    "display_name": "Easy Console Log",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "sandwitchers",
+    "version": "1.0.0",
+    "homePage": "https://github.com/sandwitchers/Easy-console-log"
+}

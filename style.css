@@ -1,0 +1,567 @@
+/* ============================================================
+   Easy Console Log — Premium Dark UI Styles
+   ============================================================ */
+
+/* ── Settings Drawer (minimal entry point) ── */
+.easy-console-log-settings .easy-console-log-gear-icon {
+    margin-right: 6px;
+    color: #4A9EFF;
+    font-size: 14px;
+    transition: transform 0.3s ease;
+}
+
+.easy-console-log-settings .inline-drawer-toggle:hover .easy-console-log-gear-icon {
+    transform: rotate(90deg);
+}
+
+.easy-console-log-open-btn-wrap {
+    margin-top: 10px;
+}
+
+.easy-console-log-open-btn {
+    width: 100%;
+    padding: 10px 16px !important;
+    background: linear-gradient(135deg, #1e2a3a 0%, #1a1e2e 100%) !important;
+    border: 1px solid #3a4a6a !important;
+    border-radius: 8px !important;
+    color: #4A9EFF !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.easy-console-log-open-btn:hover {
+    background: linear-gradient(135deg, #2a3a5a 0%, #1e2e4e 100%) !important;
+    border-color: #5a7aaa !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.2);
+}
+
+.easy-console-log-open-btn:active {
+    transform: translateY(0px);
+}
+
+.easy-console-log-minimal-footer {
+    text-align: center;
+    margin-top: 8px;
+    color: #666;
+}
+
+
+/* ── Overlay ── */
+.ecl-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: eclFadeIn 0.2s ease;
+}
+
+@keyframes eclFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.ecl-overlay-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+}
+
+
+/* ── Monitor Panel ── */
+.ecl-monitor-panel {
+    position: relative;
+    width: 95vw;
+    max-width: 480px;
+    max-height: 88vh;
+    background: #121212;
+    border: 1px solid #2a2a2a;
+    border-radius: 16px;
+    padding: 16px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(74, 158, 255, 0.1);
+    animation: eclSlideUp 0.3s ease;
+}
+
+@keyframes eclSlideUp {
+    from { transform: translateY(30px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+
+/* ── Header ── */
+.ecl-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.ecl-header-left {
+    flex: 1;
+    min-width: 0;
+}
+
+.ecl-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #4A9EFF;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+.ecl-subtitle {
+    font-size: 13px;
+    color: #888;
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+.ecl-header-right {
+    margin-left: 12px;
+}
+
+.ecl-close-btn {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px;
+    transition: color 0.2s ease;
+    line-height: 1;
+}
+
+.ecl-close-btn:hover {
+    color: #fff;
+}
+
+
+/* ── Source Toggle ── */
+.ecl-source-toggle {
+    margin-bottom: 12px;
+}
+
+.ecl-toggle-group {
+    display: flex;
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 3px;
+}
+
+.ecl-toggle-btn {
+    flex: 1;
+    padding: 8px 16px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: #888;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.ecl-toggle-btn.ecl-toggle-active {
+    background: #2a2a3a;
+    color: #fff;
+    font-weight: 600;
+}
+
+.ecl-toggle-btn:hover:not(.ecl-toggle-active) {
+    color: #bbb;
+}
+
+
+/* ── Stats Bar ── */
+.ecl-stats-bar {
+    font-size: 12px;
+    color: #777;
+    margin-bottom: 12px;
+}
+
+.ecl-stat-warn {
+    color: #f59e0b;
+}
+
+.ecl-stat-error {
+    color: #ef4444;
+}
+
+
+/* ── Search ── */
+.ecl-search-wrap {
+    display: flex;
+    align-items: center;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 2px 12px;
+    margin-bottom: 10px;
+    transition: border-color 0.2s ease;
+}
+
+.ecl-search-wrap:focus-within {
+    border-color: #4A9EFF;
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.15);
+}
+
+.ecl-search-icon {
+    color: #555;
+    font-size: 14px;
+    margin-right: 8px;
+}
+
+.ecl-search-input {
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 15px;
+    width: 100%;
+    padding: 10px 0;
+    outline: none;
+}
+
+.ecl-search-input::placeholder {
+    color: #555;
+}
+
+
+/* ── Capture Checkbox ── */
+.ecl-capture-row {
+    margin-bottom: 10px;
+}
+
+.ecl-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ecl-checkbox-label input[type="checkbox"] {
+    display: none;
+}
+
+.ecl-checkbox-custom {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #555;
+    border-radius: 4px;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.ecl-checkbox-custom::after {
+    content: '';
+    width: 10px;
+    height: 10px;
+    background: #4A9EFF;
+    border-radius: 2px;
+    opacity: 0;
+    transform: scale(0);
+    transition: all 0.15s ease;
+}
+
+.ecl-checkbox-label input[type="checkbox"]:checked + .ecl-checkbox-custom {
+    border-color: #4A9EFF;
+    background: rgba(74, 158, 255, 0.15);
+}
+
+.ecl-checkbox-label input[type="checkbox"]:checked + .ecl-checkbox-custom::after {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.ecl-checkbox-text {
+    font-size: 14px;
+    color: #ccc;
+}
+
+
+/* ── Action Buttons ── */
+.ecl-action-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.ecl-action-btn {
+    flex: 1;
+    padding: 12px;
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #aaa;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.ecl-action-btn:hover {
+    background: #2a2a2a;
+    border-color: #555;
+    color: #ddd;
+}
+
+.ecl-action-btn:active {
+    transform: scale(0.97);
+}
+
+
+/* ── Level Filter Pills ── */
+.ecl-filter-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.ecl-filter-row::-webkit-scrollbar {
+    display: none;
+}
+
+.ecl-filter-pill {
+    padding: 6px 12px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #666;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.ecl-filter-pill.ecl-filter-active {
+    background: #2a2a4a;
+    border-color: #5a5a8a;
+    color: #fff;
+}
+
+.ecl-filter-pill:hover:not(.ecl-filter-active) {
+    color: #bbb;
+    border-color: #555;
+}
+
+
+/* ── Log Container ── */
+.ecl-log-container {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
+    min-height: 0;
+}
+
+.ecl-log-container::-webkit-scrollbar {
+    width: 4px;
+}
+
+.ecl-log-container::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+
+.ecl-log-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+
+/* ── Empty State ── */
+.ecl-log-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    padding: 40px 20px;
+    color: #555;
+    font-size: 14px;
+    text-align: center;
+}
+
+.ecl-log-empty .fa-solid {
+    font-size: 32px;
+    color: #444;
+}
+
+
+/* ── Individual Log Entry Card ── */
+.ecl-log-entry {
+    background: #1a1a1a;
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    border-left: 3px solid;
+    transition: background 0.15s ease;
+    animation: eclEntryAppear 0.2s ease;
+}
+
+@keyframes eclEntryAppear {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.ecl-log-entry:hover {
+    background: #222;
+}
+
+/* Level-specific border colors */
+.ecl-log-entry.ecl-level-info    { border-left-color: #4ade80; }
+.ecl-log-entry.ecl-level-debug   { border-left-color: #6b7280; }
+.ecl-log-entry.ecl-level-warn    { border-left-color: #f59e0b; }
+.ecl-log-entry.ecl-level-error   { border-left-color: #ef4444; }
+
+.ecl-log-entry-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+}
+
+.ecl-log-timestamp {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    color: #888;
+}
+
+.ecl-log-level-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.ecl-log-level-badge.ecl-badge-info    { color: #4ade80; background: rgba(74,222,128,0.1); }
+.ecl-log-level-badge.ecl-badge-debug   { color: #9ca3af; background: rgba(156,163,175,0.08); }
+.ecl-log-level-badge.ecl-badge-warn    { color: #fbbf24; background: rgba(251,191,36,0.1); }
+.ecl-log-level-badge.ecl-badge-error   { color: #ef4444; background: rgba(239,68,68,0.1); }
+
+.ecl-log-source {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    color: #666;
+    font-style: italic;
+}
+
+.ecl-log-message {
+    font-size: 14px;
+    color: #eee;
+    font-weight: 400;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.ecl-log-message code,
+.ecl-log-message .ecl-inline-code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    background: rgba(255,255,255,0.06);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 13px;
+    color: #ccc;
+}
+
+/* Warning entries get slightly warmer text */
+.ecl-log-entry.ecl-level-warn .ecl-log-message {
+    color: #fef3c7;
+}
+
+/* Error entries get slightly redder text */
+.ecl-log-entry.ecl-level-error .ecl-log-message {
+    color: #fecaca;
+}
+
+
+/* ── Auto-scroll Indicator ── */
+.ecl-autoscroll-indicator {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(74, 158, 255, 0.15);
+    border: 1px solid rgba(74, 158, 255, 0.3);
+    border-radius: 20px;
+    padding: 6px 14px;
+    color: #4A9EFF;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ecl-autoscroll-indicator:hover {
+    background: rgba(74, 158, 255, 0.25);
+}
+
+
+/* ── Toast Notification (for errors/warnings) ── */
+.ecl-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: #fff;
+    font-size: 13px;
+    z-index: 100000;
+    max-width: 280px;
+    animation: eclToastIn 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+.ecl-toast.ecl-toast-error { border-left: 3px solid #ef4444; }
+.ecl-toast.ecl-toast-warn  { border-left: 3px solid #f59e0b; }
+
+@keyframes eclToastIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes eclToastOut {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(20px); }
+}
