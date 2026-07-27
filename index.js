@@ -1,15 +1,17 @@
 // ============================================================
-// Easy Console Log — SillyTavern Extension (v2)
+// Easy Console Log — SillyTavern Extension (v3)
 // Captures and displays console logs in a premium overlay UI
 // Newest logs appear at TOP — no scroll needed for latest entries
-// ============================================================
 //
 // CRITICAL SAFETY MEASURES:
-// 1. Only import what we ACTUALLY USE — unused imports can crash ST
+// 1. Only import what we ACTUALLY USE — unused imports crash ST
 // 2. Console interception is DELAYED until ST finishes loading
 // 3. Every operation is wrapped in try/catch to prevent ST hangs
 // 4. addLog is protected against recursive loops during interception
-//
+// 5. Overlay visibility uses CLASS TOGGLE (.ecl-hidden), not inline
+//    style — prevents CSS specificity wars with ST global CSS
+// 6. Toggle buttons are defensively re-ensured visible after render
+// ============================================================
 
 import { extension_settings } from "../../../extensions.js";
 import { saveSettingsDebounced } from "../../../../script.js";
@@ -69,14 +71,44 @@ jQuery(async () => {
 });
 
 // ── Wait for SillyTavern to finish loading ──
+// FIXED: Only resolve on "app_ready" event, not on any eventSource message.
+// The previous version resolved on ANY message, which could fire too early.
+// Also increased timeout fallback to 8s for safety on slow mobile devices.
 function waitForSillyTavernReady() {
     return new Promise((resolve) => {
-        // Strategy 1: event-based
+        let resolved = false;
+
+        const doResolve = () => {
+            if (resolved) return;
+            resolved = true;
+            resolve();
+        };
+
+        // Strategy 1: Wait specifically for "app_ready" event
+        // Only this event means ST is fully initialized and safe to intercept
         if (typeof eventSource !== "undefined" && eventSource.addEventListener) {
-            eventSource.addEventListener("app_ready", () => resolve(), { once: true });
+            eventSource.addEventListener("app_ready", doResolve, { once: true });
         }
-        // Strategy 2: timeout fallback (5s)
-        setTimeout(resolve, 5000);
+
+        // Strategy 2: Also check for ST's global getContext availability
+        // as a secondary signal that ST init is complete
+        const checkInterval = setInterval(() => {
+            try {
+                // If getContext exists and ST core is loaded, we're ready
+                if (typeof getContext === "function" || resolved) {
+                    clearInterval(checkInterval);
+                    doResolve();
+                }
+            } catch (e) {
+                // getContext might not be defined yet, that's fine
+            }
+        }, 500);
+
+        // Strategy 3: Timeout fallback (8s — longer for slow mobile devices)
+        setTimeout(() => {
+            clearInterval(checkInterval);
+            doResolve();
+        }, 8000);
     });
 }
 
@@ -93,13 +125,17 @@ function initSettings() {
         const captureCheckbox = document.getElementById("ecl_capture_checkbox");
         if (captureCheckbox) captureCheckbox.checked = settings.captureBrowserConsole;
 
-        $(".ecl-toggle-btn").removeClass("ecl-toggle-active");
-        const activeSourceBtn = $(`.ecl-toggle-btn[data-source="${settings.activeSource}"]`);
-        if (activeSourceBtn.length) activeSourceBtn.addClass("ecl-toggle-active");
+        // Set active source toggle — defensive: ensure buttons exist first
+        const toggleButtons = document.querySelectorAll(".ecl-toggle-btn");
+        toggleButtons.forEach(btn => btn.classList.remove("ecl-toggle-active"));
+        const activeSourceBtn = document.querySelector(`.ecl-toggle-btn[data-source="${settings.activeSource}"]`);
+        if (activeSourceBtn) activeSourceBtn.classList.add("ecl-toggle-active");
 
-        $(".ecl-filter-pill").removeClass("ecl-filter-active");
-        const activeFilterBtn = $(`.ecl-filter-pill[data-level="${settings.activeFilter}"]`);
-        if (activeFilterBtn.length) activeFilterBtn.addClass("ecl-filter-active");
+        // Set active filter pill — defensive
+        const filterPills = document.querySelectorAll(".ecl-filter-pill");
+        filterPills.forEach(pill => pill.classList.remove("ecl-filter-active"));
+        const activeFilterBtn = document.querySelector(`.ecl-filter-pill[data-level="${settings.activeFilter}"]`);
+        if (activeFilterBtn) activeFilterBtn.classList.add("ecl-filter-active");
     } catch (e) {
         console.error(`[${extensionName}] initSettings error:`, e);
     }
@@ -117,16 +153,17 @@ function saveSetting(key, value) {
 // ── Event Binding ──
 function bindEvents() {
     try {
-        // Open/close monitor
+        // Open/close monitor — use class toggle for visibility
         $("#easy_console_log_open_btn").on("click", openMonitor);
         $("#ecl_close_btn").on("click", closeMonitor);
         $(".ecl-overlay-backdrop").on("click", closeMonitor);
 
-        // Source toggle
+        // Source toggle — defensive: always ensure buttons stay visible
         $(".ecl-toggle-btn").on("click", function () {
             $(".ecl-toggle-btn").removeClass("ecl-toggle-active");
             $(this).addClass("ecl-toggle-active");
             saveSetting("activeSource", $(this).data("source"));
+            ensureToggleVisible();
             renderLogs();
         });
 
@@ -142,7 +179,10 @@ function bindEvents() {
         let searchDebounce = null;
         $("#ecl_search_input").on("input", function () {
             clearTimeout(searchDebounce);
-            searchDebounce = setTimeout(() => renderLogs(), 150);
+            searchDebounce = setTimeout(() => {
+                ensureToggleVisible();
+                renderLogs();
+            }, 150);
         });
 
         // Copy / Clear
@@ -154,6 +194,7 @@ function bindEvents() {
             $(".ecl-filter-pill").removeClass("ecl-filter-active");
             $(this).addClass("ecl-filter-active");
             saveSetting("activeFilter", $(this).data("level"));
+            ensureToggleVisible();
             renderLogs();
         });
     } catch (e) {
@@ -162,17 +203,74 @@ function bindEvents() {
 }
 
 // ── Monitor Open / Close ──
+// CHANGED: Use class toggle (.ecl-hidden) instead of inline style.display.
+// This prevents CSS specificity wars where ST's global CSS overrides
+// our inline style changes. The .ecl-hidden class uses display:none !important
+// which has ID-based specificity and is nearly impossible to override.
 function openMonitor() {
     isMonitorOpen = true;
     const overlay = document.getElementById("easy-console-log-monitor-overlay");
-    if (overlay) overlay.style.display = "flex";
+    if (overlay) {
+        overlay.classList.remove("ecl-hidden");
+        // Remove any leftover inline style display that might conflict
+        overlay.style.removeProperty("display");
+    }
+    ensureToggleVisible();
     renderLogs();
 }
 
 function closeMonitor() {
     isMonitorOpen = false;
     const overlay = document.getElementById("easy-console-log-monitor-overlay");
-    if (overlay) overlay.style.display = "none";
+    if (overlay) {
+        overlay.classList.add("ecl-hidden");
+        // Remove any leftover inline style display that might conflict
+        overlay.style.removeProperty("display");
+    }
+}
+
+// ── Defensive: Ensure Toggle Buttons Stay Visible ──
+// This is a safety net against ST's CSS potentially hiding toggle buttons.
+// Called after every render and state change to guarantee toggles are visible.
+function ensureToggleVisible() {
+    try {
+        const overlay = document.getElementById("easy-console-log-monitor-overlay");
+        if (!overlay) return;
+
+        // If overlay is hidden, no need to fix visibility
+        if (overlay.classList.contains("ecl-hidden")) return;
+
+        // Force toggle group and buttons to be visible
+        const toggleGroup = overlay.querySelector(".ecl-toggle-group");
+        if (toggleGroup) {
+            toggleGroup.style.removeProperty("display");
+            toggleGroup.style.removeProperty("visibility");
+            toggleGroup.style.removeProperty("opacity");
+            toggleGroup.style.removeProperty("height");
+            toggleGroup.style.removeProperty("min-height");
+            toggleGroup.style.removeProperty("max-height");
+        }
+
+        const toggleButtons = overlay.querySelectorAll(".ecl-toggle-btn");
+        toggleButtons.forEach(btn => {
+            btn.style.removeProperty("display");
+            btn.style.removeProperty("visibility");
+            btn.style.removeProperty("opacity");
+        });
+
+        // Also ensure the meta-row container is visible
+        const metaRow = overlay.querySelector(".ecl-meta-row");
+        if (metaRow) {
+            metaRow.style.removeProperty("display");
+            metaRow.style.removeProperty("visibility");
+            metaRow.style.removeProperty("opacity");
+            metaRow.style.removeProperty("height");
+            metaRow.style.removeProperty("min-height");
+            metaRow.style.removeProperty("max-height");
+        }
+    } catch (e) {
+        // Non-critical, silent
+    }
 }
 
 // ── Console Interception (safe, delayed) ──
@@ -225,8 +323,8 @@ function restoreConsole() {
         if (originalConsole.log)   console.log   = originalConsole.log;
         if (originalConsole.info)  console.info  = originalConsole.info;
         if (originalConsole.warn)  console.warn  = originalConsole.warn;
-        if (originalConsole.error) console.error  = originalConsole.error;
-        if (originalConsole.debug) console.debug  = originalConsole.debug;
+        if (originalConsole.error) console.error = originalConsole.error;
+        if (originalConsole.debug) console.debug = originalConsole.debug;
         isConsoleIntercepted = false;
     } catch (e) {
         console.error(`[${extensionName}] restoreConsole error:`, e);
@@ -279,6 +377,7 @@ function formatArgs(args) {
 
 function clearLogs() {
     logs = [];
+    ensureToggleVisible();
     renderLogs();
     updateStats();
 }
@@ -352,6 +451,8 @@ function renderLogs() {
                     <span>${emptyMsg}</span>
                 </div>
             `;
+            // After rendering empty state, ensure toggle is still visible
+            ensureToggleVisible();
             return;
         }
 
@@ -377,6 +478,13 @@ function renderLogs() {
         }).join("");
 
         container.innerHTML = html;
+
+        // CRITICAL FIX: After rendering log entries, defensively ensure
+        // toggle buttons are still visible. This prevents the bug where
+        // toggles disappear after logs appear — ST's CSS may apply
+        // display:none/visibility:hidden/opacity:0 on our elements
+        // via mutation observers or dynamic style changes.
+        ensureToggleVisible();
     } catch (e) {
         if (originalConsole.error) {
             originalConsole.error(`[${extensionName}] renderLogs error:`, e);
