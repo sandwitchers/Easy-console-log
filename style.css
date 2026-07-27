@@ -99,6 +99,8 @@
    OVERLAY
    ══════════════════════════════════════════════════════════ */
 
+/* display is NOT !important — JS controls visibility via inline style.
+   !important would override JS's display:none, making close impossible. */
 .ecl-overlay {
     position: fixed !important;
     top: 0 !important;
@@ -106,7 +108,7 @@
     width: 100vw !important;
     height: 100vh !important;
     z-index: 99999 !important;
-    display: flex !important;
+    display: flex;
     align-items: center !important;
     justify-content: center !important;
     animation: eclFadeIn 0.2s ease;
